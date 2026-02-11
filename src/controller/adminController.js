@@ -256,9 +256,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     }
 
     let thumbnail = "";
+    // console.log("req.files", req.files);
     if (req.files?.thumbnail) {
       thumbnail = await uploadFileToSpaces(req.files.thumbnail[0]);
     }
+    // console.log("thumbnail", thumbnail);
 
     const episodeData = {
       uuid: uuidv4(),
@@ -272,7 +274,9 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       thumbnail,
       link,
       audio,
-      podcastId: Number(podcastId),
+      podcast: {
+        connect: { id: Number(podcastId) },
+      },
       detail,
       timestamps,
     };
