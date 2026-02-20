@@ -163,7 +163,7 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
         distinct: ["topic"],
         select: { topic: true },
         where: {
-          topic: { not: null },
+          topic: { not: null }, isDeleted: false,
         },
       }),
     ]);
