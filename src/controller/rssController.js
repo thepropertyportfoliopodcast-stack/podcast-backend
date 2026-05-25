@@ -2,9 +2,66 @@ const { errorResponse } = require("../utils/ErrorHandling");
 const catchAsync = require("../utils/catchAsync");
 const prisma = require("../prismaconfig");
 const { create } = require("xmlbuilder2");
+
+const htmlToPlainText = (value) => {
+  if (!value) return "";
+  return value
+    .toString()
+    .replace(/\r\n/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/h[1-6]>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(ul|ol)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+};
+
+const isAudioMime = (mime) => !!mime && /^audio\//i.test(mime);
+const isVideoMime = (mime) => !!mime && /^video\//i.test(mime);
+
+const getExt = (url = "") => {
+  const clean = url.split("?")[0].split("#")[0];
+  const match = clean.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : "";
+};
+
+const isAudioUrl = (url) => {
+  const ext = getExt(url);
+  return ["mp3", "m4a", "aac", "wav", "ogg", "oga", "flac", "opus"].includes(ext);
+};
+
+const isVideoUrl = (url) => {
+  const ext = getExt(url);
+  return ["mp4", "m4v", "mov", "webm", "mkv"].includes(ext);
+};
+
+const isSupportedImageUrl = (url) => {
+  const ext = getExt(url);
+  return ["jpg", "jpeg", "png"].includes(ext);
+};
+
+const detectMime = (url, fallback) => {
+  if (fallback) return fallback;
+  const ext = getExt(url);
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "m4a" || ext === "aac") return "audio/mp4";
+  if (ext === "ogg" || ext === "oga") return "audio/ogg";
+  if (ext === "opus") return "audio/opus";
+  if (ext === "wav") return "audio/wav";
+  if (ext === "flac") return "audio/flac";
+  if (ext === "mp4" || ext === "m4v" || ext === "mov") return "video/mp4";
+  if (ext === "webm") return "video/webm";
+  if (ext === "mkv") return "video/x-matroska";
+  return "application/octet-stream";
+};
 exports.getpodcastLists = catchAsync(async (req, res) => {
   const podcastId = req.params.podcastId;
-  const type = req.params.type || 'video'; // 'video' | 'audio'
+  const type = req.params.type || "video"; // 'video' | 'audio'
   const podcast = await prisma.podcast.findUnique({
     where: { uuid: podcastId },
   });
@@ -12,18 +69,24 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     return errorResponse(res, "Podcast not found", 404);
   }
   const episodes = await prisma.episode.findMany({
-    where: { podcastId: podcast?.id },
+    where: { podcastId: podcast?.id, isDeleted: false },
     include: { podcast: true },
     orderBy: { createdAt: "desc" }
   });
-  if (!episodes || episodes.length === 0) {
-    return errorResponse(res, "No episodes found", 404);
-  }
+  const filteredEpisodes = (episodes || []).filter((ep) => {
+    const audioUrl = ep?.audio;
+    const videoUrl = ep?.link;
+    const guessedIsAudio = (isAudioMime(ep.mimefield) || isAudioUrl(audioUrl)) && !!audioUrl;
+    const guessedIsVideo = (isVideoMime(ep.mimefield) || isVideoUrl(videoUrl)) && !!videoUrl;
+    if (type === "audio") return guessedIsAudio;
+    return guessedIsVideo;
+  });
   const feed = create({ version: "1.0", encoding: "UTF-8" })
     .ele("rss", {
       version: "2.0",
       "xmlns:itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd",
-      "xmlns:googleplay": "http://www.google.com/schemas/play-podcasts/1.0"
+      "xmlns:googleplay": "http://www.google.com/schemas/play-podcasts/1.0",
+      "xmlns:content": "http://purl.org/rss/1.0/modules/content/"
     })
     .ele("channel");
 
@@ -45,25 +108,32 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
   feed.ele("itunes:category", { text: "Business" })
     .ele("itunes:category", { text: "Investing" }).up()
   .up();
-  feed.ele("itunes:image").att("href", podcast?.thumbnail || "").up();
+  if (podcast?.thumbnail && isSupportedImageUrl(podcast.thumbnail)) {
+    feed.ele("itunes:image").att("href", podcast.thumbnail).up();
+  }
 
   // Generate episodes based on type
-  episodes.forEach((ep, index) => {
+  filteredEpisodes.forEach((ep, index) => {
+    const enclosureUrl = type === "audio" ? ep.audio : ep.link;
+    if (!enclosureUrl) return;
+
+    const mimeType = detectMime(enclosureUrl, ep.mimefield);
+    const fileSize = ep.size ? (ep.size * 1048576).toString() : null;
+
     const item = feed.ele("item");
-    
-    // Dynamic enclosure based on type
-    let enclosureUrl, mimeType, fileSize = "627572736";
-    
-    if (type === 'audio') {
-      enclosureUrl = ep.audioLink;
-      mimeType = "audio/mpeg"; // Spotify/Apple compliant
-    } else { // video
-      enclosureUrl = ep.link;
-      mimeType = "video/mp4"; // YouTube/others
-    }
+
+    const itemShortDescription = ep.description || htmlToPlainText(ep.detail || "");
+    const itemLongTextDescription = htmlToPlainText(ep.detail || "") || ep.description || "";
+    const itemHtmlDescription = ep.detail || (ep.description ? `<p>${ep.description}</p>` : "");
 
     item.ele("title").txt(ep.title).up();
-    item.ele("description").txt(ep.description || "").up();
+    item.ele("description").txt(itemLongTextDescription).up();
+    item.ele("itunes:summary").txt(itemLongTextDescription).up();
+    item.ele("itunes:subtitle").txt(itemShortDescription).up();
+    item.ele("googleplay:description").txt(itemLongTextDescription).up();
+    if (itemHtmlDescription) {
+      item.ele("content:encoded").dat(itemHtmlDescription).up();
+    }
     item.ele("link").txt(`https://thepropertyportfolio.com.au/podcast/${ep.uuid}`).up();
     item.ele("guid", { isPermaLink: "false" })
       .txt(`https://thepropertyportfolio.com.au/podcast/${ep.uuid}`).up();
@@ -74,16 +144,14 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     item.ele("itunes:episode").txt(ep.episodeNumber || index + 1).up();
     item.ele("itunes:episodeType").txt("full").up();
 
-    if (ep.thumbnail) {
+    if (ep.thumbnail && isSupportedImageUrl(ep.thumbnail)) {
       item.ele("itunes:image").att("href", ep.thumbnail).up();
     }
 
     // Dynamic enclosure
-    item.ele("enclosure", {
-      url: enclosureUrl,
-      type: mimeType,
-      length: fileSize
-    }).up();
+    const enclosure = item.ele("enclosure").att("url", enclosureUrl).att("type", mimeType);
+    if (fileSize) enclosure.att("length", fileSize);
+    enclosure.up();
   });
 
   const xml = feed.end({ prettyPrint: true });

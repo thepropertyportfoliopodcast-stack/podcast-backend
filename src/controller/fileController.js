@@ -107,10 +107,22 @@ exports.HomeEpisodesGet = catchAsync(async (req, res) => {
 
 exports.GetAllFiles = catchAsync(async (req, res) => {
   try {
-    const { search } = req.query;
+    let { search, topic, page, limit } = req.query;
+
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 10;
+    const skip = (page - 1) * limit;
 
     const whereClause = {
       isDeleted: false,
+      ...(topic && {
+        podcast: {
+          name: {
+            equals: topic,
+            mode: "insensitive",
+          },
+        },
+      }),
       ...(search && {
         OR: [
           {
@@ -131,21 +143,40 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
       }),
     };
 
-    const data = await prisma.episode.findMany({
-      where: whereClause,
-      include: {
-        podcast: true,
-      },
-      orderBy: {
-        createdAt: "desc",
+    const [total, episodes, podcasts] = await Promise.all([
+      prisma.episode.count({ where: whereClause }),
+      prisma.episode.findMany({
+        where: whereClause,
+        include: {
+          podcast: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        skip,
+        take: limit,
+      }),
+      prisma.podcast.findMany({
+        where: { isDeleted: false },
+        select: { name: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 1;
+    const hasNextPage = page < totalPages;
+
+    return successResponse(res, "Files retrieved successfully", 200, {
+      episodes,
+      topics: podcasts.map((p) => p.name),
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage,
       },
     });
-
-    if (!data || data.length === 0) {
-      return errorResponse(res, "Files not found", 404);
-    }
-
-    return successResponse(res, "Files retrieved successfully", 200, data);
   } catch (error) {
     console.error("File retrieval error:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);

@@ -15,61 +15,89 @@ model User {
 }
 
 model Podcast {
-  id             Int      @id @default(autoincrement())
-  uuid           String   @unique // You will generate this manually using uuidv4
-  thumbnail      String
-  name           String   @unique
-  email          String
-  language      String[]
-  description    String
-  createdAt      DateTime @default(now()) // Use timestamp for creation time
-  author         String   @default("The Property Portfolio Podcast")  // Optional
-  isDeleted      Boolean    @default(false)
-  cast           String[]             // Array of strings
-  episodes       Episode[] // ← Virtual relation; Prisma resolves this using Files.podcastId
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique
+  thumbnail   String
+  name        String   @unique
+  email       String
+  description String
+  createdAt   DateTime @default(now())
+  author      String   @default("The Property Portfolio Podcast")
+  cast        String[]
+  isDeleted   Boolean  @default(false)
+  language    String[]
+  episodes    Episode[]
 }
 
 model Episode {
-  id              Int @id @default(autoincrement())
-  uuid            String @unique
-  title           String
-  description     String
-  duration        Int
-  durationInSec   Int
-  link            String? // Optional (nullable in DB)
-  thumbnail       String
-  mimefield       String
-  isDeleted       Boolean    @default(false)
-  size            Int?   // Optional (nullable in DB)
-  createdAt       DateTime @default(now()) // Use timestamp for creation time
-  podcastId       Int
-  podcast         Podcast @relation(fields: [podcastId], references: [id])
-  detail          String?
+  id                 Int                  @id @default(autoincrement())
+  uuid               String               @unique
+  title              String
+  description        String
+  duration           Int
+  durationInSec      Int
+  link               String?
+  thumbnail          String
+  mimefield          String
+  size               Int?
+  createdAt          DateTime             @default(now())
+  podcastId          Int
+  isDeleted          Boolean              @default(false)
+  detail             String?
+  spotifyLink        String?
+  appleLink          String?
+  timestamps         String?
+  episodeNumber      Int?
+  season             Int?
+  topic              String?              @default("Financing")
+  audio              String?
+  audioStatus        String               @default("PENDING")
+  DistributionStatus DistributionStatus[]
+  podcast            Podcast              @relation(fields: [podcastId], references: [id])
 }
 
 model Guide {
-  id              Int @id @default(autoincrement())
-  uuid            String  @unique
-  title           String
-  description     String
-  author          String  @default("The Property Portfolio Podcast")  // Optional
-  link            String
-  language        String[] 
-  thumbnail       String
-  isDeleted       Boolean @default(false)
-  pages           Int?   
-  downloads       Int     @default(0)
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique
+  title       String
+  description String
+  author      String   @default("The Property Portfolio Podcast")
+  link        String
+  language    String[]
+  thumbnail   String
+  isDeleted   Boolean  @default(false)
+  downloads   Int      @default(0)
+  pages       Int?
 }
 
 model subscriber {
-  id             Int    @id @default(autoincrement())
-  email          String @unique   
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  createdAt DateTime @default(now())
 }
 
 model contact {
-  id             Int    @id @default(autoincrement())
-  email          String @unique   
-  name           String
-  subject        String? 
-  message        String
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String
+  message   String
+  subject   String?
+  createdAt DateTime @default(now())
+}
+
+model DistributionStatus {
+  id                 Int      @id @default(autoincrement())
+  episodeId          Int
+  spotifyStatus      String   @default("pending")
+  appleStatus        String   @default("pending")
+  spotifyEpisodeId   String?
+  spotifyEpisodeLink String?
+  appleEpisodeId     String?
+  appleEpisodeLink   String?
+  errorLogs          String?
+  retryCount         Int      @default(0)
+  lastAttemptAt      DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  Episode            Episode  @relation(fields: [episodeId], references: [id])
 }
