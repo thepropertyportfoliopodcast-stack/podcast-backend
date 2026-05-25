@@ -267,10 +267,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       title,
       description,
       topic,
-      duration: duration ? Number(duration) : 0,
-      durationInSec: durationInSec ? Number(durationInSec) : 0,
+      duration: duration ? Math.round(Number(duration)) : 0,
+      durationInSec: durationInSec ? Math.round(Number(durationInSec)) : 0,
       mimefield: mimefield || "",
-      size: size ? Number(size) : null,
+      size: size ? Math.round(Number(size)) : null,
       thumbnail,
       link,
       audio,
@@ -375,10 +375,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (topic) updates.topic = topic;
     if (detail) updates.detail = detail;
     if (timestamps) updates.timestamps = timestamps;
-    if (duration !== undefined) updates.duration = Number(duration);
-    if (durationInSec !== undefined) updates.durationInSec = Number(durationInSec);
+    if (duration !== undefined) updates.duration = Math.round(Number(duration));
+    if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (mimefield !== undefined) updates.mimefield = mimefield;
-    if (size !== undefined) updates.size = Number(size);
+    if (size !== undefined) updates.size = Math.round(Number(size));
     
     if (isValidString(spotifyLink) && spotifyLink.trim() !== existingEpisode.spotifyLink) {
       updates.spotifyLink = spotifyLink.trim();
