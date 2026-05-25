@@ -107,28 +107,20 @@ exports.HomeEpisodesGet = catchAsync(async (req, res) => {
 
 exports.GetAllFiles = catchAsync(async (req, res) => {
   try {
-    let { search, topic, page, limit } = req.query;
+    const { search, topic } = req.query;
 
-    page = parseInt(page) || 1;
-    limit = parseInt(limit) || 10;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
     const whereClause = {
       isDeleted: false,
-      ...(topic && {
-        podcast: {
-          name: {
-            equals: topic,
-            mode: "insensitive",
-          },
-        },
-      }),
-      ...(search && {
+      ...(search && search.trim() !== "" && {
         OR: [
           {
             title: {
               contains: search,
-              mode: "insensitive", // case-insensitive
+              mode: "insensitive",
             },
           },
           {
@@ -141,10 +133,16 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
           },
         ],
       }),
+
+      ...(topic && topic.trim() !== "" && {
+        topic: {
+          equals: topic,
+          mode: "insensitive",
+        },
+      }),
     };
 
-    const [total, episodes, podcasts] = await Promise.all([
-      prisma.episode.count({ where: whereClause }),
+    const [episodes, totalCount, topics] = await Promise.all([
       prisma.episode.findMany({
         where: whereClause,
         include: {
@@ -156,29 +154,36 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
         skip,
         take: limit,
       }),
-      prisma.podcast.findMany({
-        where: { isDeleted: false },
-        select: { name: true },
-        orderBy: { name: "asc" },
+
+      prisma.episode.count({
+        where: whereClause,
+      }),
+
+      prisma.episode.findMany({
+        distinct: ["topic"],
+        select: { topic: true },
+        where: {
+          topic: { not: null }, isDeleted: false,
+        },
       }),
     ]);
 
-    const totalPages = limit > 0 ? Math.ceil(total / limit) : 1;
-    const hasNextPage = page < totalPages;
+    const distinctTopics = topics.map(t => t.topic);
 
-    return successResponse(res, "Files retrieved successfully", 200, {
-      episodes,
-      topics: podcasts.map((p) => p.name),
+    return successResponse(res, "Episode retrieved successfully", 200, {
+      episodes: episodes || [],
+      topics: distinctTopics,
       pagination: {
-        total,
         page,
         limit,
-        totalPages,
-        hasNextPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNextPage: page * limit < totalCount,
+        hasPrevPage: page > 1,
       },
     });
   } catch (error) {
-    console.error("File retrieval error:", error);
+    console.error("Episode retrieval error:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);
   }
 });

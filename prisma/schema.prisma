@@ -15,16 +15,16 @@ model User {
 }
 
 model Podcast {
-  id          Int      @id @default(autoincrement())
-  uuid        String   @unique
+  id          Int       @id @default(autoincrement())
+  uuid        String    @unique
   thumbnail   String
-  name        String   @unique
+  name        String    @unique
   email       String
   description String
-  createdAt   DateTime @default(now())
-  author      String   @default("The Property Portfolio Podcast")
+  createdAt   DateTime  @default(now())
+  author      String    @default("The Property Portfolio Podcast")
   cast        String[]
-  isDeleted   Boolean  @default(false)
+  isDeleted   Boolean   @default(false)
   language    String[]
   episodes    Episode[]
 }
@@ -49,9 +49,9 @@ model Episode {
   timestamps         String?
   episodeNumber      Int?
   season             Int?
-  topic              String?              @default("Financing")
+  topic              String? @default("Financing")
   audio              String?
-  audioStatus        String               @default("PENDING")
+  audioStatus        String @default("PENDING")
   DistributionStatus DistributionStatus[]
   podcast            Podcast              @relation(fields: [podcastId], references: [id])
 }
@@ -71,33 +71,33 @@ model Guide {
 }
 
 model subscriber {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
+  id    Int    @id @default(autoincrement())
+  email String @unique
   createdAt DateTime @default(now())
 }
 
 model contact {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String
-  message   String
-  subject   String?
+  id      Int     @id @default(autoincrement())
+  email   String  @unique
+  name    String
+  message String
+  subject String?
   createdAt DateTime @default(now())
 }
 
 model DistributionStatus {
-  id                 Int      @id @default(autoincrement())
+  id                 Int       @id @default(autoincrement())
   episodeId          Int
-  spotifyStatus      String   @default("pending")
-  appleStatus        String   @default("pending")
+  spotifyStatus      String    @default("pending")
+  appleStatus        String    @default("pending")
   spotifyEpisodeId   String?
   spotifyEpisodeLink String?
   appleEpisodeId     String?
   appleEpisodeLink   String?
   errorLogs          String?
-  retryCount         Int      @default(0)
+  retryCount         Int       @default(0)
   lastAttemptAt      DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  Episode            Episode  @relation(fields: [episodeId], references: [id])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  Episode            Episode   @relation(fields: [episodeId], references: [id])
 }

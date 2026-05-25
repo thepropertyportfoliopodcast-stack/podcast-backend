@@ -49,6 +49,9 @@ exports.AddPodcast = catchAsync(async (req, res) => {
 
     return successResponse(res, "Podcast created successfully!", 201, newPodcast);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return errorResponse(res, "A podcast with this name already exists", 409);
+    }
     console.error("Error in AddPodcast:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);
   }
@@ -232,40 +235,50 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     const {
       title,
       description,
+      topic,
       podcastId,
       detail,
+      timestamps,
       size,
       link,
+      audio,
       mimefield,
       duration,
       durationInSec
     } = req.body;
 
-    if (!title || !description || !podcastId || !detail || !link) {
+    if (!title || !description || !podcastId || !detail || !link || !timestamps || !topic || !audio) {
       return errorResponse(
         res,
-        "Title, description, podcastId & video link are required",
+        "Title, description, topic, podcastId, timestamps, audio & video link are required",
         401
       );
     }
 
     let thumbnail = "";
+    // console.log("req.files", req.files);
     if (req.files?.thumbnail) {
       thumbnail = await uploadFileToSpaces(req.files.thumbnail[0]);
     }
+    // console.log("thumbnail", thumbnail);
 
     const episodeData = {
       uuid: uuidv4(),
       title,
       description,
+      topic,
       duration: duration ? Number(duration) : 0,
       durationInSec: durationInSec ? Number(durationInSec) : 0,
       mimefield: mimefield || "",
       size: size ? Number(size) : null,
       thumbnail,
-      link, // already uploaded large file URL
-      podcastId: Number(podcastId),
+      link,
+      audio,
+      podcast: {
+        connect: { id: Number(podcastId) },
+      },
       detail,
+      timestamps,
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
@@ -327,13 +340,25 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     const {
       title,
       description,
+      topic,
       detail,
+      timestamps,
       link,
+      audio,
       duration,
       durationInSec,
       mimefield,
       size,
+      spotifyLink,
+      appleLink,
     } = req.body;
+
+    // console.log("req.body", req.body);
+    const isValidString = (val) =>
+      typeof val === "string" &&
+      val.trim() !== "" &&
+      val.trim().toLowerCase() !== "null" &&
+      val.trim().toLowerCase() !== "undefined";
 
     const existingEpisode = await prisma.episode.findUnique({
       where: { uuid: id },
@@ -347,11 +372,20 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
 
     if (title) updates.title = title;
     if (description) updates.description = description;
+    if (topic) updates.topic = topic;
     if (detail) updates.detail = detail;
+    if (timestamps) updates.timestamps = timestamps;
     if (duration !== undefined) updates.duration = Number(duration);
     if (durationInSec !== undefined) updates.durationInSec = Number(durationInSec);
     if (mimefield !== undefined) updates.mimefield = mimefield;
     if (size !== undefined) updates.size = Number(size);
+    
+    if (isValidString(spotifyLink) && spotifyLink.trim() !== existingEpisode.spotifyLink) {
+      updates.spotifyLink = spotifyLink.trim();
+    }
+    if (isValidString(appleLink) && appleLink.trim() !== existingEpisode.appleLink) {
+      updates.appleLink = appleLink.trim();
+    }
 
     // Handle thumbnail update only if new file comes
     if (req.files?.thumbnail?.[0]) {
@@ -364,14 +398,38 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       updates.thumbnail = newThumbUrl;
     }
 
-    // --- NEW VIDEO LOGIC ---
-    if (link && link !== existingEpisode.link) {
-      const isVideoDeleted = await deleteFileFromSpaces(existingEpisode.link);
-      if (!isVideoDeleted) {
-        console.warn("Failed to delete old video file");
+    const isValidLink =
+      typeof link === "string" &&
+      link.trim() !== "" &&
+      link.trim().toLowerCase() !== "null" &&
+      link.trim().toLowerCase() !== "undefined";
+
+    if (isValidLink && link.trim() !== existingEpisode.link) {
+      if (existingEpisode.link) {
+        const isVideoDeleted = await deleteFileFromSpaces(existingEpisode.link);
+        if (!isVideoDeleted) {
+          console.warn("Failed to delete old video file");
+        }
       }
 
-      updates.link = link;
+      updates.link = link.trim();
+    }
+
+    const isValidAudio =
+      typeof audio === "string" &&
+      audio.trim() !== "" &&
+      audio.trim().toLowerCase() !== "null" &&
+      audio.trim().toLowerCase() !== "undefined";
+
+    if (isValidAudio && audio.trim() !== existingEpisode.audio) {
+      if (existingEpisode.audio) {
+        const isAudioDeleted = await deleteFileFromSpaces(existingEpisode.audio);
+        if (!isAudioDeleted) {
+          console.warn("Failed to delete old audio file");
+        }
+      }
+
+      updates.audio = audio.trim();
     }
 
     const updatedEpisode = await prisma.episode.update({

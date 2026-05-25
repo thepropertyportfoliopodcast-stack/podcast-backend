@@ -106,23 +106,50 @@ exports.GetUser = catchAsync(async (req, res) => {
 
 exports.Dashboard = catchAsync(async (req, res) => {
   try {
-    const podcastCount = await prisma.podcast.count();
+    // Total podcasts
+    const podcastCount = await prisma.podcast.count({
+      where: { isDeleted: false },
+    });
 
-    const fileCount = await prisma.episode.count();
+    // Total episodes
+    const fileCount = await prisma.episode.count({
+      where: { isDeleted: false },
+    });
 
+    // Average duration
     const { _avg } = await prisma.episode.aggregate({
+      where: { isDeleted: false },
       _avg: {
         duration: true,
       },
+    });
+
+    // ✅ Latest 2 episodes
+    const latestEpisodes = await prisma.episode.findMany({
+      where: {
+        isDeleted: false,
+      },
+      include: {
+        podcast: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 2,
     });
 
     return successResponse(res, "Data retrieved successfully!", 200, {
       podcastCount,
       fileCount,
       averageDuration: _avg.duration || 0,
+      latestEpisodes,
     });
   } catch (error) {
-    console.log(error);
-    return errorResponse(res, error.message || "Internal Server Error", 500);
+    console.error(error);
+    return errorResponse(
+      res,
+      error.message || "Internal Server Error",
+      500
+    );
   }
 });

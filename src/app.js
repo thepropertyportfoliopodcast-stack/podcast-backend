@@ -42,6 +42,7 @@ app.use("/api", require("./route/contactRoutes"));
 app.use("/api", require("./route/adminRoutes"));
 app.use("/api", require("./route/uploadLarge"));
 
+// require("./cronJobs")();
 
 app.get("/", (req, res) => {
   res.json({
