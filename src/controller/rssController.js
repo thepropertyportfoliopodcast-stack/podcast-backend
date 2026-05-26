@@ -3,15 +3,31 @@ const catchAsync = require("../utils/catchAsync");
 const prisma = require("../prismaconfig");
 const { create } = require("xmlbuilder2");
 
-const formatTimestampsForSpotify = (timestamps) => {
-  if (!timestamps) return "";
+const escapeHtml = (value = "") =>
+  value
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
-  return timestamps
-    .split("\n")
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => `<p>${line}</p>`)
-    .join("");
+const htmlToPlainText = (value) => {
+  if (!value) return "";
+  return value
+    .toString()
+    .replace(/\r\n/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/h[1-6]>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(ul|ol)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 };
 
 exports.getpodcastLists = catchAsync(async (req, res) => {
@@ -26,7 +42,6 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
       isDeleted: false,
     },
   });
-  console.log("Podcast fetched:", podcastId, podcast ? "Found" : "Not Found");
 
   if (!podcast) {
     return errorResponse(res, "Podcast deleted or not available", 404);
@@ -52,14 +67,14 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
       version: "2.0",
       "xmlns:itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd",
       "xmlns:googleplay": "http://www.google.com/schemas/play-podcasts/1.0",
+      "xmlns:content": "http://purl.org/rss/1.0/modules/content/",
     })
     .ele("channel");
 
   // ===============================
   // ✅ CHANNEL (STABLE FOR APPLE)
   // ===============================
-  const podcastDescription =
-    "The Property Portfolio Podcast explores property investing, finance, and wealth-building strategies across Australia using data-backed insights.";
+  const podcastDescription = podcast.description || podcast.name;
 
   feed.ele("title").txt(podcast.name).up();
   feed.ele("link").txt("https://thepropertyportfolio.com.au/episode").up();
@@ -93,7 +108,7 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
   if (podcast.thumbnail) {
     feed
       .ele("itunes:image")
-      .att("href", `${podcast.thumbnail}?v=${podcast.updatedAt?.getTime() || Date.now()}`)
+      .att("href", podcast.thumbnail)
       .up();
   }
 
@@ -103,12 +118,33 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
   episodes.forEach((ep, index) => {
     const item = feed.ele("item");
 
-    const descriptionHTML = `
-      ${ep.description ? `<p><strong>Description</strong></p><p>${ep.description}</p>` : ""}
-      ${ep.details ? `<p><strong>Details</strong></p><p>${ep.details}</p>` : ""}
-      ${ep.timestamps ? `<p><strong>Timestamps</strong></p>` : ""}
-      ${ep.timestamps ? formatTimestampsForSpotify(ep.timestamps) : ""}
-    `;
+    const detailHtml = ep.detail || "";
+    const timestampsHtml = ep.timestamps || "";
+
+    const detailText = htmlToPlainText(detailHtml);
+    const timestampsText = htmlToPlainText(timestampsHtml);
+    const detailHasTimestamps =
+      /\btimestamps?\b/i.test(detailText) ||
+      /\btimestamp\b/i.test(detailText) ||
+      (timestampsText && detailText.includes(timestampsText));
+
+    const contentEncoded = [
+      ep.description
+        ? `<p><strong>Description</strong></p><p>${escapeHtml(ep.description)}</p>`
+        : "",
+      detailHtml ? `<p><strong>Details</strong></p>${detailHtml}` : "",
+      timestampsHtml && !detailHasTimestamps ? `<p><strong>Timestamps</strong></p>${timestampsHtml}` : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
+    const plainDescriptionParts = [];
+    if (ep.description) plainDescriptionParts.push(ep.description.trim());
+    if (detailText) plainDescriptionParts.push(detailText);
+    if (timestampsText && !detailHasTimestamps) {
+      plainDescriptionParts.push(`TIMESTAMPS\n${timestampsText}`);
+    }
+    const plainDescription = plainDescriptionParts.filter(Boolean).join("\n---\n");
 
     // ===============================
     // ✅ ENCLOSURE (TYPE BASED)
@@ -118,7 +154,7 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
 
     if (type === "video") {
       // ⚠️ Apple Podcasts video RSS alag hota hai
-      enclosureUrl = ep.video;
+      enclosureUrl = ep.link;
       mimeType = "video/mp4";
     } else {
       // ✅ Apple + Spotify safe
@@ -127,7 +163,13 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     }
 
     item.ele("title").txt(ep.title).up();
-    item.ele("description").dat(descriptionHTML).up();
+    item.ele("description").txt(plainDescription).up();
+    item.ele("itunes:summary").txt(plainDescription).up();
+    item.ele("itunes:subtitle").txt(ep.description || ep.title).up();
+    item.ele("googleplay:description").txt(plainDescription).up();
+    if (contentEncoded) {
+      item.ele("content:encoded").dat(contentEncoded).up();
+    }
     item.ele("link").txt(`https://thepropertyportfolio.com.au/podcast/${ep.uuid}`).up();
 
     // ✅ Stable GUID (very important)
@@ -144,15 +186,18 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     if (ep.thumbnail) {
       item
         .ele("itunes:image")
-        .att("href", `${ep.thumbnail}?v=${ep.updatedAt?.getTime() || Date.now()}`)
+        .att("href", ep.thumbnail)
         .up();
     }
 
-    item.ele("enclosure", {
-      url: enclosureUrl,
-      type: mimeType,
-      length: "627572736",
-    }).up();
+    const lengthBytes =
+      typeof ep.size === "number" && ep.size > 0
+        ? (ep.size > 1024 * 1024 ? Math.round(ep.size) : Math.round(ep.size * 1048576)).toString()
+        : null;
+
+    const enclosure = item.ele("enclosure").att("url", enclosureUrl).att("type", mimeType);
+    if (lengthBytes) enclosure.att("length", lengthBytes);
+    enclosure.up();
   });
 
   const xml = feed.end({ prettyPrint: true });
@@ -213,7 +258,6 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
 //    });
 
 //    const xml = feed.end({ prettyPrint: true });
-
 //    res.set('Content-Type', 'application/rss+xml');
 //    res.send(xml);
 // });

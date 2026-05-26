@@ -1,4 +1,11 @@
 const winston = require('winston');
+const fs = require("fs");
+const path = require("path");
+
+const logsDir = path.resolve(__dirname, "..", "..", "logs");
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
 const levelFilter = (level) => {
   return winston.format((info) => {
@@ -16,37 +23,37 @@ const Loggers = winston.createLogger({
   ),
   transports: [
     new winston.transports.File({
-      filename: 'logs/error.log',
+      filename: path.join(logsDir, "error.log"),
       level: 'error',
       format: levelFilter('error'),
     }),
     new winston.transports.File({
-      filename: 'logs/warn.log',
+      filename: path.join(logsDir, "warn.log"),
       level: 'warn',
       format: levelFilter('warn'),
     }),
     new winston.transports.File({
-      filename: 'logs/info.log',
+      filename: path.join(logsDir, "info.log"),
       level: 'info',
       format: levelFilter('info'),
     }),
     new winston.transports.File({
-      filename: 'logs/http.log',
+      filename: path.join(logsDir, "http.log"),
       level: 'http',
       format: levelFilter('http'),
     }),
     new winston.transports.File({
-      filename: 'logs/verbose.log',
+      filename: path.join(logsDir, "verbose.log"),
       level: 'verbose',
       format: levelFilter('verbose'),
     }),
     new winston.transports.File({
-      filename: 'logs/debug.log',
+      filename: path.join(logsDir, "debug.log"),
       level: 'debug',
       format: levelFilter('debug'),
     }),
     new winston.transports.File({
-      filename: 'logs/silly.log',
+      filename: path.join(logsDir, "silly.log"),
       level: 'silly',
       format: levelFilter('silly'),
     }),
