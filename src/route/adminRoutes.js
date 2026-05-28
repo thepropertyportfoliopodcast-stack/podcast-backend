@@ -1,4 +1,4 @@
-const { AddPodcast, GetAllPodcasts, PodcastsDetail, GetAllPodcastswithFiles, UpdatePodcast, AddEpisode, GetEpisodeByUUID, GetAllEpisodes, UpdateEpisode, DeleteEpisode, DisablePodcast, AddGuide, UpdateGuide, GetAllGuides, UploadCheck, DeleteCheck } = require("../controller/adminController");
+const { AddPodcast, GetAllPodcasts, PodcastsDetail, GetAllPodcastswithFiles, UpdatePodcast, AddEpisode, GetEpisodeByUUID, GetAllEpisodes, UpdateEpisode, DeleteEpisode, PermanentDeleteEpisode, DisablePodcast, AddGuide, UpdateGuide, GetAllGuides, UploadCheck, DeleteCheck } = require("../controller/adminController");
 const router = require("express").Router();
 const { verifyToken } = require("../utils/tokenVerify");
 const { upload } = require("../utils/FileUploader");
@@ -22,6 +22,7 @@ router.post("/admin/file/update/:id", verifyToken, upload.fields([
   ]), UpdateEpisode);
 
 router.delete("/admin/file/delete/:id", verifyToken, DeleteEpisode);
+router.delete("/admin/file/delete-permanent/:id", verifyToken, PermanentDeleteEpisode);
 
 router.post("/admin/guide/add", verifyToken, upload.fields([
     { name: 'guide', maxCount: 1 },

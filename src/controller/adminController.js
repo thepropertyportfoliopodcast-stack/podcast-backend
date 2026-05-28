@@ -475,6 +475,35 @@ exports.DeleteEpisode = catchAsync(async (req, res) => {
   }
 });
 
+exports.PermanentDeleteEpisode = catchAsync(async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const episode = await prisma.episode.findUnique({
+      where: { uuid: id },
+    });
+
+    if (!episode) {
+      return errorResponse(res, "Episode not found", 404);
+    }
+
+    await prisma.$transaction([
+      prisma.distributionStatus.deleteMany({ where: { episodeId: episode.id } }),
+      prisma.episode.delete({ where: { uuid: id } }),
+    ]);
+
+    const urlsToDelete = [episode.thumbnail, episode.link, episode.audio].filter(Boolean);
+    const results = await Promise.allSettled(urlsToDelete.map((url) => deleteFileFromSpaces(url)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed) console.warn("PermanentDeleteEpisode: failed to delete some files", { failed });
+
+    return successResponse(res, "Episode permanently deleted successfully", 200);
+  } catch (error) {
+    console.error("PermanentDeleteEpisode error:", error);
+    return errorResponse(res, error.message || "Internal Server Error", 500);
+  }
+});
+
 exports.UploadCheck = catchAsync(async (req, res) => {
   try {
     if (!req.file) {
