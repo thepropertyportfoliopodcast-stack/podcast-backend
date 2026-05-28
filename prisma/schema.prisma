@@ -39,7 +39,7 @@ model Episode {
   link               String?
   thumbnail          String
   mimefield          String
-  size               Int?
+  size               BigInt?
   createdAt          DateTime             @default(now())
   podcastId          Int
   isDeleted          Boolean              @default(false)

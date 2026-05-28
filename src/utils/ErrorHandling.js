@@ -1,4 +1,15 @@
 
+const sanitizeBigInt = (value) => {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(sanitizeBigInt);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = sanitizeBigInt(v);
+    return out;
+  }
+  return value;
+};
+
 const successResponse = (res, message, statusCode = 200, data = null) => {
   const response = {
     status: true,
@@ -6,7 +17,7 @@ const successResponse = (res, message, statusCode = 200, data = null) => {
   };
 
   if (data !== null) {
-    response.data = data;
+    response.data = sanitizeBigInt(data);
   }
 
   return res.status(statusCode).json(response);

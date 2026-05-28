@@ -30,6 +30,14 @@ const htmlToPlainText = (value) => {
     .trim();
 };
 
+const normalizeEpisodeSizeToBytes = (size) => {
+  if (size === null || size === undefined || size === "") return null;
+  const s = typeof size === "bigint" ? size : BigInt(Math.round(Number(size)));
+  if (s <= 0n) return null;
+  if (s > 10000n) return s;
+  return s * 1048576n;
+};
+
 exports.getpodcastLists = catchAsync(async (req, res) => {
   const podcastId = req.params.podcastId;
 
@@ -190,10 +198,8 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
         .up();
     }
 
-    const lengthBytes =
-      typeof ep.size === "number" && ep.size > 0
-        ? (ep.size > 1024 * 1024 ? Math.round(ep.size) : Math.round(ep.size * 1048576)).toString()
-        : null;
+    const sizeBytes = normalizeEpisodeSizeToBytes(ep.size);
+    const lengthBytes = sizeBytes ? sizeBytes.toString() : null;
 
     const enclosure = item.ele("enclosure").att("url", enclosureUrl).att("type", mimeType);
     if (lengthBytes) enclosure.att("length", lengthBytes);
