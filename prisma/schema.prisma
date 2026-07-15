@@ -17,6 +17,7 @@ model User {
 model Podcast {
   id          Int       @id @default(autoincrement())
   uuid        String    @unique
+  slug        String    @unique
   thumbnail   String
   name        String    @unique
   email       String
@@ -32,6 +33,7 @@ model Podcast {
 model Episode {
   id                 Int                  @id @default(autoincrement())
   uuid               String               @unique
+  slug               String               @unique
   title              String
   description        String
   duration           Int

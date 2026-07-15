@@ -56,9 +56,9 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
     if (!id) {
       return errorResponse(res, "UUID is required", 400);
     }
-    const data = await prisma.podcast.findUnique({
-    where: {
-      uuid: id,
+    const data = await prisma.podcast.findFirst({
+      where: {
+      OR: [{ uuid: id }, { slug: id }],
       isDeleted: false,
     },
     include: {
@@ -93,10 +93,6 @@ exports.HomeEpisodesGet = catchAsync(async (req, res) => {
     },
     take: 4,
   });
-
-    if (!data || data.length === 0) {
-      return errorResponse(res, "Files not found", 404);
-    }
 
     return successResponse(res, "Files retrieved successfully", 200, data);
   } catch (error) {
@@ -163,7 +159,8 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
         distinct: ["topic"],
         select: { topic: true },
         where: {
-          topic: { not: null }, isDeleted: false,
+          topic: { not: null },
+          isDeleted: false,
         },
       }),
     ]);
@@ -194,8 +191,11 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     if (!id) {
       return errorResponse(res, "UUID is required", 400);
     }
-    const file = await prisma.episode.findUnique({
-      where: { uuid:id, isDeleted:false },
+    const file = await prisma.episode.findFirst({
+      where: {
+        OR: [{ uuid: id }, { slug: id }],
+        isDeleted: false,
+      },
       include: {
         podcast: true, // Include related podcast info if needed
       },

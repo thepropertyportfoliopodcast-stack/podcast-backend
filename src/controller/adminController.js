@@ -5,6 +5,7 @@ const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploa
 const prisma = require("../prismaconfig");
 const { error } = require("winston");
 const { getMediaDurationFromBuffer } = require("../utils/mediaDuration");
+const { createUniqueSlug } = require("../utils/slug");
 
 
 
@@ -26,6 +27,7 @@ exports.AddPodcast = catchAsync(async (req, res) => {
     // Build podcast data object
     const podcastData = {
       uuid: uuidv4(),
+      slug: await createUniqueSlug(prisma, "podcast", name),
       name,
       thumbnail: thumbnailKey,
       description,
@@ -266,6 +268,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 
     const episodeData = {
       uuid: uuidv4(),
+      slug: await createUniqueSlug(prisma, "episode", title),
       title,
       description,
       topic,
