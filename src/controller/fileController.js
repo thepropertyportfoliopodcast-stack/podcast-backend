@@ -4,6 +4,7 @@ const catchAsync = require("../utils/catchAsync");
 const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploader");
 const prisma = require("../prismaconfig");
 const { error } = require("winston");
+const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 
 exports.GetAllPodcasts = catchAsync(async (req, res) => {
   try {
@@ -191,9 +192,10 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     if (!id) {
       return errorResponse(res, "UUID is required", 400);
     }
+    const cleanSlug = removeEpisodeNumberFromSlug(id);
     const file = await prisma.episode.findFirst({
       where: {
-        OR: [{ uuid: id }, { slug: id }],
+        OR: [{ uuid: id }, { slug: id }, { slug: cleanSlug }],
         isDeleted: false,
       },
       include: {

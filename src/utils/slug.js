@@ -10,8 +10,19 @@ function slugify(value = "") {
     .slice(0, 100) || "podcast";
 }
 
+function removeEpisodeNumber(value = "") {
+  return value
+    .toString()
+    .replace(/^\s*ep(?:isode)?\.?\s*\d+\s*(?:[|.:\-–—]+\s*)?/i, "")
+    .trim();
+}
+
+function removeEpisodeNumberFromSlug(value = "") {
+  return value.toString().replace(/^ep(?:isode)?-\d+-/i, "");
+}
+
 async function createUniqueSlug(prisma, model, value) {
-  const base = slugify(value);
+  const base = slugify(model === "episode" ? removeEpisodeNumber(value) : value);
   let candidate = base;
   let suffix = 2;
 
@@ -23,4 +34,9 @@ async function createUniqueSlug(prisma, model, value) {
   return candidate;
 }
 
-module.exports = { createUniqueSlug, slugify };
+module.exports = {
+  createUniqueSlug,
+  removeEpisodeNumber,
+  removeEpisodeNumberFromSlug,
+  slugify,
+};
