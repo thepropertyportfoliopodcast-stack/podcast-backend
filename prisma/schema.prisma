@@ -22,6 +22,10 @@ model Podcast {
   name        String    @unique
   email       String
   description String
+  seoTitle    String?
+  seoDescription String?
+  primaryKeyword String?
+  secondaryKeywords String?
   createdAt   DateTime  @default(now())
   author      String    @default("The Property Portfolio Podcast")
   cast        String[]
@@ -36,6 +40,10 @@ model Episode {
   slug               String               @unique
   title              String
   description        String
+  seoTitle           String?
+  seoDescription     String?
+  primaryKeyword     String?
+  secondaryKeywords  String?
   duration           Int
   durationInSec      Int
   link               String?

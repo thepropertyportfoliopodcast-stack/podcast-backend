@@ -11,7 +11,7 @@ const { createUniqueSlug } = require("../utils/slug");
 
 exports.AddPodcast = catchAsync(async (req, res) => {
   try {
-    const { name, author, cast, description, email, language } = req.body;
+    const { name, author, cast, description, email, language, seoTitle, seoDescription, primaryKeyword, secondaryKeywords } = req.body;
 
     if (!name || !description) {
       return errorResponse(res, "Name and description are required", 401);
@@ -31,6 +31,10 @@ exports.AddPodcast = catchAsync(async (req, res) => {
       name,
       thumbnail: thumbnailKey,
       description,
+      seoTitle: seoTitle?.trim() || null,
+      seoDescription: seoDescription?.trim() || null,
+      primaryKeyword: primaryKeyword?.trim() || null,
+      secondaryKeywords: secondaryKeywords?.trim() || null,
       author: author || undefined,  // Optional; Prisma default will apply if undefined
       email: email || undefined,
       language: language ? (typeof language === "string" ? JSON.parse(language) : language) : undefined,
@@ -126,7 +130,7 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
 exports.UpdatePodcast = catchAsync(async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, author, cast, email, language } = req.body;
+    const { name, description, author, cast, email, language, seoTitle, seoDescription, primaryKeyword, secondaryKeywords } = req.body;
     // console.log("language", language);
     const dataToUpdate = {};
 
@@ -134,6 +138,10 @@ exports.UpdatePodcast = catchAsync(async (req, res) => {
     if (description) dataToUpdate.description = description;
     if (author !== undefined) dataToUpdate.author = author;
     if (email !== undefined) dataToUpdate.email = email;
+    if (seoTitle !== undefined) dataToUpdate.seoTitle = seoTitle.trim() || null;
+    if (seoDescription !== undefined) dataToUpdate.seoDescription = seoDescription.trim() || null;
+    if (primaryKeyword !== undefined) dataToUpdate.primaryKeyword = primaryKeyword.trim() || null;
+    if (secondaryKeywords !== undefined) dataToUpdate.secondaryKeywords = secondaryKeywords.trim() || null;
     if (language !== undefined) {
       try {
         dataToUpdate.language =
@@ -248,7 +256,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       audio,
       mimefield,
       duration,
-      durationInSec
+      durationInSec,
+      seoTitle,
+      seoDescription,
+      primaryKeyword,
+      secondaryKeywords
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || !link || !timestamps || !topic || !audio) {
@@ -271,6 +283,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       slug: await createUniqueSlug(prisma, "episode", title),
       title,
       description,
+      seoTitle: seoTitle?.trim() || null,
+      seoDescription: seoDescription?.trim() || null,
+      primaryKeyword: primaryKeyword?.trim() || null,
+      secondaryKeywords: secondaryKeywords?.trim() || null,
       topic,
       duration: duration ? Math.round(Number(duration)) : 0,
       durationInSec: durationInSec ? Math.round(Number(durationInSec)) : 0,
@@ -359,6 +375,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       size,
       spotifyLink,
       appleLink,
+      seoTitle,
+      seoDescription,
+      primaryKeyword,
+      secondaryKeywords,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -381,6 +401,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (title) updates.title = title;
     if (description) updates.description = description;
     if (topic) updates.topic = topic;
+    if (seoTitle !== undefined) updates.seoTitle = seoTitle.trim() || null;
+    if (seoDescription !== undefined) updates.seoDescription = seoDescription.trim() || null;
+    if (primaryKeyword !== undefined) updates.primaryKeyword = primaryKeyword.trim() || null;
+    if (secondaryKeywords !== undefined) updates.secondaryKeywords = secondaryKeywords.trim() || null;
     if (detail) updates.detail = detail;
     if (timestamps) updates.timestamps = timestamps;
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
