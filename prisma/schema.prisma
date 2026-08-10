@@ -61,6 +61,7 @@ model Episode {
   season             Int?
   topic              String? @default("Financing")
   audio              String?
+  audioSize          BigInt?
   audioStatus        String @default("PENDING")
   DistributionStatus DistributionStatus[]
   podcast            Podcast              @relation(fields: [podcastId], references: [id])

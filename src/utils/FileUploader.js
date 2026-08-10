@@ -1,6 +1,7 @@
 const multer = require('multer');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
+const { encodeMediaUrl, sanitizeMediaFileName } = require('./mediaUrl');
 
 /**
  * ✅ AWS S3 Client
@@ -21,7 +22,7 @@ const upload = multer({ storage: multer.memoryStorage() });
  */
 const uploadFileToSpaces = async (file) => {
   try {
-    const fileName = `${uuidv4()}-${file.originalname.replaceAll(' ', '_')}`;
+    const fileName = `${uuidv4()}-${sanitizeMediaFileName(file.originalname)}`;
     const folder = 'files';
 
     const uploadParams = {
@@ -36,7 +37,7 @@ const uploadFileToSpaces = async (file) => {
     await s3Client.send(command);
 
     // ✅ AWS public object URL
-    const fileUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${folder}/${fileName}`;
+    const fileUrl = encodeMediaUrl(`https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${folder}/${fileName}`);
 
     return fileUrl;
   } catch (err) {

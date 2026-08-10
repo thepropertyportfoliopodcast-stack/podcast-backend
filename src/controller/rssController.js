@@ -2,6 +2,7 @@ const { errorResponse } = require("../utils/ErrorHandling");
 const catchAsync = require("../utils/catchAsync");
 const prisma = require("../prismaconfig");
 const { create } = require("xmlbuilder2");
+const { encodeMediaUrl } = require("../utils/mediaUrl");
 
 const escapeHtml = (value = "") =>
   value
@@ -59,6 +60,9 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     where: {
       podcastId: podcast.id,
       isDeleted: false,
+      ...(type === "video"
+        ? { link: { not: null } }
+        : { audio: { not: null } }),
     },
     include: { podcast: true },
 
@@ -162,11 +166,11 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
 
     if (type === "video") {
       // ⚠️ Apple Podcasts video RSS alag hota hai
-      enclosureUrl = ep.link;
+      enclosureUrl = encodeMediaUrl(ep.link);
       mimeType = "video/mp4";
     } else {
       // ✅ Apple + Spotify safe
-      enclosureUrl = ep.audio;
+      enclosureUrl = encodeMediaUrl(ep.audio);
       mimeType = "audio/mpeg";
     }
 
@@ -198,7 +202,9 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
         .up();
     }
 
-    const sizeBytes = normalizeEpisodeSizeToBytes(ep.size);
+    const sizeBytes = normalizeEpisodeSizeToBytes(
+      type === "video" ? ep.size : ep.audioSize
+    );
     const lengthBytes = sizeBytes ? sizeBytes.toString() : null;
 
     const enclosure = item.ele("enclosure").att("url", enclosureUrl).att("type", mimeType);

@@ -2,6 +2,7 @@ const { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMulti
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { v4: uuid } = require("uuid");
 const crypto = require("crypto");
+const { encodeMediaUrl, sanitizeMediaFileName } = require("../utils/mediaUrl");
 
 const s3 = new S3Client({
   region: process.env.B2_REGION,
@@ -18,7 +19,7 @@ exports.startLargeUpload = async (req, res) => {
     // console.log("Upload route hit");
     const { fileName, mimeType } = req.body;
 
-    const key = `files/${uuid()}-${fileName.replace(/\s/g, "_")}`;
+    const key = `files/${uuid()}-${sanitizeMediaFileName(fileName)}`;
 
     const command = new CreateMultipartUploadCommand({
       Bucket: process.env.B2_BUCKET,
@@ -73,7 +74,9 @@ exports.completeLargeUpload = async (req, res) => {
 
     await s3.send(command);
 
-    const fileUrl = `${process.env.B2_DOWNLOAD_URL}/file/${process.env.B2_BUCKET}/${key}`;
+    const fileUrl = encodeMediaUrl(
+      `${process.env.B2_DOWNLOAD_URL}/file/${process.env.B2_BUCKET}/${key}`
+    );
 
     res.status(200).json({ fileUrl });
 

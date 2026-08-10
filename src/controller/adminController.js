@@ -254,6 +254,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       size,
       link,
       audio,
+      audioSize,
       mimefield,
       duration,
       durationInSec,
@@ -298,6 +299,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       thumbnail,
       link,
       audio,
+      audioStatus: audio ? "COMPLETED" : "PENDING",
+      audioSize:
+        audioSize !== undefined && audioSize !== null && audioSize !== ""
+          ? BigInt(Math.round(Number(audioSize)))
+          : null,
       podcast: {
         connect: { id: Number(podcastId) },
       },
@@ -369,6 +375,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       timestamps,
       link,
       audio,
+      audioSize,
       duration,
       durationInSec,
       mimefield,
@@ -462,6 +469,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       }
 
       updates.audio = audio.trim();
+      updates.audioStatus = "COMPLETED";
+    }
+    if (audioSize !== undefined && audioSize !== null && audioSize !== "") {
+      updates.audioSize = BigInt(Math.round(Number(audioSize)));
     }
 
     const updatedEpisode = await prisma.episode.update({
