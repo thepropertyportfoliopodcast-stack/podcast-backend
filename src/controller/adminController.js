@@ -279,6 +279,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       primaryKeyword,
       secondaryKeywords
       ,hostSlugs
+      ,spotifyLink
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
@@ -331,6 +332,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       topicsCovered: parseStringArray(topicsCovered),
       reelLinks: parseStringArray(reelLinks),
       hostSlugs: parseStringArray(hostSlugs),
+      spotifyLink: spotifyLink?.trim() || null,
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
