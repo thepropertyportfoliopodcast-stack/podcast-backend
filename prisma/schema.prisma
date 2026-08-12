@@ -57,6 +57,10 @@ model Episode {
   spotifyLink        String?
   appleLink          String?
   timestamps         String?
+  youtubeUrl         String?
+  transcript         String?
+  topicsCovered      String[]              @default([])
+  reelLinks          String[]              @default([])
   episodeNumber      Int?
   season             Int?
   topic              String? @default("Financing")

@@ -199,7 +199,15 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
         isDeleted: false,
       },
       include: {
-        podcast: true, // Include related podcast info if needed
+        podcast: {
+          include: {
+            episodes: {
+              where: { isDeleted: false },
+              orderBy: { createdAt: "desc" },
+              take: 3,
+            },
+          },
+        },
       },
     });
     if (!file) {

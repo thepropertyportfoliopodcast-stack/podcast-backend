@@ -1,0 +1,5 @@
+ALTER TABLE "public"."Episode"
+ADD COLUMN "youtubeUrl" TEXT,
+ADD COLUMN "transcript" TEXT,
+ADD COLUMN "topicsCovered" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "reelLinks" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

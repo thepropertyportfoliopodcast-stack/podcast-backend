@@ -7,6 +7,18 @@ const { error } = require("winston");
 const { getMediaDurationFromBuffer } = require("../utils/mediaDuration");
 const { createUniqueSlug } = require("../utils/slug");
 
+const parseStringArray = (value) => {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).map((item) => item.trim()).filter(Boolean);
+  } catch {
+    // Accept newline-separated dashboard values.
+  }
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+};
+
 
 
 exports.AddPodcast = catchAsync(async (req, res) => {
@@ -251,6 +263,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       podcastId,
       detail,
       timestamps,
+      youtubeUrl,
+      transcript,
+      topicsCovered,
+      reelLinks,
       size,
       link,
       audio,
@@ -264,10 +280,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       secondaryKeywords
     } = req.body;
 
-    if (!title || !description || !podcastId || !detail || !link || !timestamps || !topic || !audio) {
+    if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
       return errorResponse(
         res,
-        "Title, description, topic, podcastId, timestamps, audio & video link are required",
+        "Title, description, topic, podcastId, timestamps, audio and a YouTube or video link are required",
         401
       );
     }
@@ -297,7 +313,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
           ? BigInt(Math.round(Number(size)))
           : null,
       thumbnail,
-      link,
+      link: link || null,
       audio,
       audioStatus: audio ? "COMPLETED" : "PENDING",
       audioSize:
@@ -309,6 +325,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       },
       detail,
       timestamps,
+      youtubeUrl: youtubeUrl?.trim() || null,
+      transcript: transcript || null,
+      topicsCovered: parseStringArray(topicsCovered),
+      reelLinks: parseStringArray(reelLinks),
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
@@ -373,6 +393,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       topic,
       detail,
       timestamps,
+      youtubeUrl,
+      transcript,
+      topicsCovered,
+      reelLinks,
       link,
       audio,
       audioSize,
@@ -414,6 +438,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (secondaryKeywords !== undefined) updates.secondaryKeywords = secondaryKeywords.trim() || null;
     if (detail) updates.detail = detail;
     if (timestamps) updates.timestamps = timestamps;
+    if (youtubeUrl !== undefined) updates.youtubeUrl = youtubeUrl.trim() || null;
+    if (transcript !== undefined) updates.transcript = transcript || null;
+    if (topicsCovered !== undefined) updates.topicsCovered = parseStringArray(topicsCovered);
+    if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (mimefield !== undefined) updates.mimefield = mimefield;
