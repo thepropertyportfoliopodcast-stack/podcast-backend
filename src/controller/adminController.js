@@ -280,6 +280,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       secondaryKeywords
       ,hostSlugs
       ,spotifyLink
+      ,publishedDate
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
@@ -333,6 +334,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       reelLinks: parseStringArray(reelLinks),
       hostSlugs: parseStringArray(hostSlugs),
       spotifyLink: spotifyLink?.trim() || null,
+      ...(publishedDate ? { createdAt: new Date(`${publishedDate}T00:00:00.000Z`) } : {}),
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
@@ -415,6 +417,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       primaryKeyword,
       secondaryKeywords,
       hostSlugs,
+      publishedDate,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -450,6 +453,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
+    if (publishedDate) updates.createdAt = new Date(`${publishedDate}T00:00:00.000Z`);
     if (mimefield !== undefined) updates.mimefield = mimefield;
     if (size !== undefined && size !== null && size !== "") updates.size = BigInt(Math.round(Number(size)));
     
