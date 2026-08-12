@@ -15,23 +15,23 @@ model User {
 }
 
 model Podcast {
-  id          Int       @id @default(autoincrement())
-  uuid        String    @unique
-  slug        String    @unique
-  thumbnail   String
-  name        String    @unique
-  email       String
-  description String
-  seoTitle    String?
-  seoDescription String?
-  primaryKeyword String?
+  id                Int       @id @default(autoincrement())
+  uuid              String    @unique
+  slug              String    @unique
+  thumbnail         String
+  name              String    @unique
+  email             String
+  description       String
+  seoTitle          String?
+  seoDescription    String?
+  primaryKeyword    String?
   secondaryKeywords String?
-  createdAt   DateTime  @default(now())
-  author      String    @default("The Property Portfolio Podcast")
-  cast        String[]
-  isDeleted   Boolean   @default(false)
-  language    String[]
-  episodes    Episode[]
+  createdAt         DateTime  @default(now())
+  author            String    @default("The Property Portfolio Podcast")
+  cast              String[]
+  isDeleted         Boolean   @default(false)
+  language          String[]
+  episodes          Episode[]
 }
 
 model Episode {
@@ -59,16 +59,39 @@ model Episode {
   timestamps         String?
   youtubeUrl         String?
   transcript         String?
-  topicsCovered      String[]              @default([])
-  reelLinks          String[]              @default([])
+  topicsCovered      String[]             @default([])
+  reelLinks          String[]             @default([])
+  hostSlugs          String[]             @default([])
   episodeNumber      Int?
   season             Int?
-  topic              String? @default("Financing")
+  topic              String?              @default("Financing")
   audio              String?
   audioSize          BigInt?
-  audioStatus        String @default("PENDING")
+  audioStatus        String               @default("PENDING")
   DistributionStatus DistributionStatus[]
   podcast            Podcast              @relation(fields: [podcastId], references: [id])
+}
+
+model Host {
+  id                Int      @id @default(autoincrement())
+  uuid              String   @unique
+  slug              String   @unique
+  name              String   @unique
+  designation       String
+  shortBio          String
+  bio               String
+  image             String
+  email             String?
+  linkedinUrl       String?
+  instagramUrl      String?
+  seoTitle          String?
+  seoDescription    String?
+  primaryKeyword    String?
+  secondaryKeywords String?
+  displayOrder      Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model Guide {
@@ -86,17 +109,17 @@ model Guide {
 }
 
 model subscriber {
-  id    Int    @id @default(autoincrement())
-  email String @unique
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
   createdAt DateTime @default(now())
 }
 
 model contact {
-  id      Int     @id @default(autoincrement())
-  email   String  @unique
-  name    String
-  message String
-  subject String?
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String
+  message   String
+  subject   String?
   createdAt DateTime @default(now())
 }
 

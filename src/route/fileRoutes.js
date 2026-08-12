@@ -1,6 +1,10 @@
 const { GetAllPodcasts, PodcastsDetail, UploadCheck, GetAllPodcastswithFiles, GetAllFiles, GetFileByUUID, HomeEpisodesGet, GetAllGuides, HomeGuideGet } = require("../controller/fileController");
 const router = require("express").Router();
 const { upload } = require("../utils/FileUploader");
+const { listHosts, getHost } = require("../controller/hostController");
+
+router.get("/host/get", listHosts);
+router.get("/host/get/:id", getHost);
 
 router.get("/podcast/get", GetAllPodcasts);
 router.get("/podcast/get-detail/all", GetAllPodcastswithFiles);

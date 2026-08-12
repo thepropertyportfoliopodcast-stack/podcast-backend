@@ -2,6 +2,12 @@ const { AddPodcast, GetAllPodcasts, PodcastsDetail, GetAllPodcastswithFiles, Upd
 const router = require("express").Router();
 const { verifyToken } = require("../utils/tokenVerify");
 const { upload } = require("../utils/FileUploader");
+const { listHosts, getHost, createHost, updateHost } = require("../controller/hostController");
+
+router.get("/admin/host/get", verifyToken, listHosts);
+router.get("/admin/host/get/:id", verifyToken, getHost);
+router.post("/admin/host/add", verifyToken, upload.single("image"), createHost);
+router.post("/admin/host/update/:id", verifyToken, upload.single("image"), updateHost);
 
 router.post("/admin/podcast/add", verifyToken, upload.single('thumbnail'), AddPodcast);
 router.get("/admin/podcast/get", GetAllPodcasts);

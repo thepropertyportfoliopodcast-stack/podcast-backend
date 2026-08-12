@@ -278,6 +278,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       seoDescription,
       primaryKeyword,
       secondaryKeywords
+      ,hostSlugs
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
@@ -329,6 +330,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       transcript: transcript || null,
       topicsCovered: parseStringArray(topicsCovered),
       reelLinks: parseStringArray(reelLinks),
+      hostSlugs: parseStringArray(hostSlugs),
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
@@ -410,6 +412,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       seoDescription,
       primaryKeyword,
       secondaryKeywords,
+      hostSlugs,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -442,6 +445,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (transcript !== undefined) updates.transcript = transcript || null;
     if (topicsCovered !== undefined) updates.topicsCovered = parseStringArray(topicsCovered);
     if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
+    if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (mimefield !== undefined) updates.mimefield = mimefield;
