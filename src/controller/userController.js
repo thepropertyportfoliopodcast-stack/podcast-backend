@@ -53,7 +53,7 @@ exports.login = catchAsync(async (req, res) => {
     }
     const user = await getUser({ email });
     if (!user) {
-      return errorResponse(res, "User not found", 404);
+      return errorResponse(res, "Invalid email or password", 401);
     }
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
