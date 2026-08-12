@@ -274,6 +274,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       mimefield,
       duration,
       durationInSec,
+      episodeNumber,
       seoTitle,
       seoDescription,
       primaryKeyword,
@@ -310,6 +311,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       topic,
       duration: duration ? Math.round(Number(duration)) : 0,
       durationInSec: durationInSec ? Math.round(Number(durationInSec)) : 0,
+      episodeNumber: episodeNumber ? Math.round(Number(episodeNumber)) : null,
       mimefield: mimefield || "",
       size:
         size !== undefined && size !== null && size !== ""
@@ -408,6 +410,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       audioSize,
       duration,
       durationInSec,
+      episodeNumber,
       mimefield,
       size,
       spotifyLink,
@@ -453,6 +456,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
+    if (episodeNumber !== undefined) updates.episodeNumber = episodeNumber === "" ? null : Math.round(Number(episodeNumber));
     if (publishedDate) updates.createdAt = new Date(`${publishedDate}T00:00:00.000Z`);
     if (mimefield !== undefined) updates.mimefield = mimefield;
     if (size !== undefined && size !== null && size !== "") updates.size = BigInt(Math.round(Number(size)));
