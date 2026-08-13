@@ -282,6 +282,8 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ,hostSlugs
       ,spotifyLink
       ,publishedDate
+      ,isFeatured
+      ,relatedEpisodeUuids
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
@@ -336,6 +338,8 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       reelLinks: parseStringArray(reelLinks),
       hostSlugs: parseStringArray(hostSlugs),
       spotifyLink: spotifyLink?.trim() || null,
+      isFeatured: String(isFeatured).toLowerCase() === "true",
+      relatedEpisodeUuids: parseStringArray(relatedEpisodeUuids).slice(0, 3),
       ...(publishedDate ? { createdAt: new Date(`${publishedDate}T00:00:00.000Z`) } : {}),
     };
 
@@ -421,6 +425,8 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       secondaryKeywords,
       hostSlugs,
       publishedDate,
+      isFeatured,
+      relatedEpisodeUuids,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -454,6 +460,8 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (topicsCovered !== undefined) updates.topicsCovered = parseStringArray(topicsCovered);
     if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
+    if (isFeatured !== undefined) updates.isFeatured = String(isFeatured).toLowerCase() === "true";
+    if (relatedEpisodeUuids !== undefined) updates.relatedEpisodeUuids = parseStringArray(relatedEpisodeUuids).filter((uuid) => uuid !== id).slice(0, 3);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (episodeNumber !== undefined) updates.episodeNumber = episodeNumber === "" ? null : Math.round(Number(episodeNumber));

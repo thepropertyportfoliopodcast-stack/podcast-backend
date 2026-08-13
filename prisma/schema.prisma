@@ -62,6 +62,8 @@ model Episode {
   topicsCovered      String[]             @default([])
   reelLinks          String[]             @default([])
   hostSlugs          String[]             @default([])
+  isFeatured         Boolean              @default(false)
+  relatedEpisodeUuids String[]             @default([])
   episodeNumber      Int?
   season             Int?
   topic              String?              @default("Financing")

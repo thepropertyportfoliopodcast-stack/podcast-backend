@@ -83,16 +83,14 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
 exports.HomeEpisodesGet = catchAsync(async (req, res) => {
   try {
     const data = await prisma.episode.findMany({
-    where: {
-      isDeleted: false,
-    },
+    where: { isDeleted: false, isFeatured: true },
     include: {
       podcast: true, 
     },
     orderBy: {
       createdAt: 'desc',
     },
-    take: 4,
+    take: 5,
   });
 
     return successResponse(res, "Files retrieved successfully", 200, data);
@@ -213,7 +211,14 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     if (!file) {
       return errorResponse(res, "File not found", 404);
     }
-    return successResponse(res, "File retrieved successfully", 200, file);
+    const selected = Array.isArray(file.relatedEpisodeUuids) ? file.relatedEpisodeUuids.slice(0, 3) : [];
+    const relatedRows = selected.length ? await prisma.episode.findMany({
+      where: { uuid: { in: selected }, isDeleted: false },
+      include: { podcast: true },
+    }) : [];
+    const byUuid = new Map(relatedRows.map((episode) => [episode.uuid, episode]));
+    const relatedEpisodes = selected.map((uuid) => byUuid.get(uuid)).filter(Boolean);
+    return successResponse(res, "File retrieved successfully", 200, { ...file, relatedEpisodes });
   } catch (error) {
     console.error("Get file error:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);

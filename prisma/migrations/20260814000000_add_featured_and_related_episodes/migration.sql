@@ -1,0 +1,3 @@
+ALTER TABLE "Episode"
+ADD COLUMN "isFeatured" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "relatedEpisodeUuids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
