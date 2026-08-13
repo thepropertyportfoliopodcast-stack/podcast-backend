@@ -339,7 +339,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       hostSlugs: parseStringArray(hostSlugs),
       spotifyLink: spotifyLink?.trim() || null,
       isFeatured: String(isFeatured).toLowerCase() === "true",
-      relatedEpisodeUuids: parseStringArray(relatedEpisodeUuids).slice(0, 3),
+      relatedEpisodeUuids: parseStringArray(relatedEpisodeUuids).slice(0, 4),
       ...(publishedDate ? { createdAt: new Date(`${publishedDate}T00:00:00.000Z`) } : {}),
     };
 
@@ -461,7 +461,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
     if (isFeatured !== undefined) updates.isFeatured = String(isFeatured).toLowerCase() === "true";
-    if (relatedEpisodeUuids !== undefined) updates.relatedEpisodeUuids = parseStringArray(relatedEpisodeUuids).filter((uuid) => uuid !== id).slice(0, 3);
+    if (relatedEpisodeUuids !== undefined) updates.relatedEpisodeUuids = parseStringArray(relatedEpisodeUuids).filter((uuid) => uuid !== id).slice(0, 4);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (episodeNumber !== undefined) updates.episodeNumber = episodeNumber === "" ? null : Math.round(Number(episodeNumber));

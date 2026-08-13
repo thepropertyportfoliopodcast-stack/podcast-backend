@@ -211,7 +211,7 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     if (!file) {
       return errorResponse(res, "File not found", 404);
     }
-    const selected = Array.isArray(file.relatedEpisodeUuids) ? file.relatedEpisodeUuids.slice(0, 3) : [];
+    const selected = Array.isArray(file.relatedEpisodeUuids) ? file.relatedEpisodeUuids.slice(0, 4) : [];
     const relatedRows = selected.length ? await prisma.episode.findMany({
       where: { uuid: { in: selected }, isDeleted: false },
       include: { podcast: true },
