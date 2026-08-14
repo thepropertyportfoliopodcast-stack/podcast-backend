@@ -298,6 +298,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     if (req.files?.thumbnail) {
       thumbnail = await uploadFileToSpaces(req.files.thumbnail[0]);
     }
+    let homepageThumbnail = null;
+    if (req.files?.homepageThumbnail?.[0]) {
+      homepageThumbnail = await uploadFileToSpaces(req.files.homepageThumbnail[0]);
+    }
     // console.log("thumbnail", thumbnail);
 
     const episodeData = {
@@ -319,6 +323,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
           ? BigInt(Math.round(Number(size)))
           : null,
       thumbnail,
+      homepageThumbnail,
       link: link || null,
       audio,
       audioStatus: audio ? "COMPLETED" : "PENDING",
@@ -486,6 +491,16 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       updates.thumbnail = newThumbUrl;
     }
 
+    if (req.files?.homepageThumbnail?.[0]) {
+      if (existingEpisode.homepageThumbnail) {
+        const isHomepageThumbDeleted = await deleteFileFromSpaces(existingEpisode.homepageThumbnail);
+        if (!isHomepageThumbDeleted) {
+          console.warn("Failed to delete old homepage thumbnail");
+        }
+      }
+      updates.homepageThumbnail = await uploadFileToSpaces(req.files.homepageThumbnail[0]);
+    }
+
     const isValidLink =
       typeof link === "string" &&
       link.trim() !== "" &&
@@ -579,7 +594,7 @@ exports.PermanentDeleteEpisode = catchAsync(async (req, res) => {
       prisma.episode.delete({ where: { uuid: id } }),
     ]);
 
-    const urlsToDelete = [episode.thumbnail, episode.link, episode.audio].filter(Boolean);
+    const urlsToDelete = [episode.thumbnail, episode.homepageThumbnail, episode.link, episode.audio].filter(Boolean);
     const results = await Promise.allSettled(urlsToDelete.map((url) => deleteFileFromSpaces(url)));
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed) console.warn("PermanentDeleteEpisode: failed to delete some files", { failed });

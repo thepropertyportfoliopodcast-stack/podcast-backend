@@ -2,6 +2,9 @@ const { GetAllPodcasts, PodcastsDetail, UploadCheck, GetAllPodcastswithFiles, Ge
 const router = require("express").Router();
 const { upload } = require("../utils/FileUploader");
 const { listHosts, getHost } = require("../controller/hostController");
+const { listPublicHeroPhones } = require("../controller/heroPhoneController");
+
+router.get("/hero-phone/get", listPublicHeroPhones);
 
 router.get("/host/get", listHosts);
 router.get("/host/get/:id", getHost);

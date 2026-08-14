@@ -35,43 +35,44 @@ model Podcast {
 }
 
 model Episode {
-  id                 Int                  @id @default(autoincrement())
-  uuid               String               @unique
-  slug               String               @unique
-  title              String
-  description        String
-  seoTitle           String?
-  seoDescription     String?
-  primaryKeyword     String?
-  secondaryKeywords  String?
-  duration           Int
-  durationInSec      Int
-  link               String?
-  thumbnail          String
-  mimefield          String
-  size               BigInt?
-  createdAt          DateTime             @default(now())
-  podcastId          Int
-  isDeleted          Boolean              @default(false)
-  detail             String?
-  spotifyLink        String?
-  appleLink          String?
-  timestamps         String?
-  youtubeUrl         String?
-  transcript         String?
-  topicsCovered      String[]             @default([])
-  reelLinks          String[]             @default([])
-  hostSlugs          String[]             @default([])
-  isFeatured         Boolean              @default(false)
+  id                  Int                  @id @default(autoincrement())
+  uuid                String               @unique
+  slug                String               @unique
+  title               String
+  description         String
+  seoTitle            String?
+  seoDescription      String?
+  primaryKeyword      String?
+  secondaryKeywords   String?
+  duration            Int
+  durationInSec       Int
+  link                String?
+  thumbnail           String
+  homepageThumbnail   String?
+  mimefield           String
+  size                BigInt?
+  createdAt           DateTime             @default(now())
+  podcastId           Int
+  isDeleted           Boolean              @default(false)
+  detail              String?
+  spotifyLink         String?
+  appleLink           String?
+  timestamps          String?
+  youtubeUrl          String?
+  transcript          String?
+  topicsCovered       String[]             @default([])
+  reelLinks           String[]             @default([])
+  hostSlugs           String[]             @default([])
+  isFeatured          Boolean              @default(false)
   relatedEpisodeUuids String[]             @default([])
-  episodeNumber      Int?
-  season             Int?
-  topic              String?              @default("Financing")
-  audio              String?
-  audioSize          BigInt?
-  audioStatus        String               @default("PENDING")
-  DistributionStatus DistributionStatus[]
-  podcast            Podcast              @relation(fields: [podcastId], references: [id])
+  episodeNumber       Int?
+  season              Int?
+  topic               String?              @default("Financing")
+  audio               String?
+  audioSize           BigInt?
+  audioStatus         String               @default("PENDING")
+  DistributionStatus  DistributionStatus[]
+  podcast             Podcast              @relation(fields: [podcastId], references: [id])
 }
 
 model Host {
@@ -94,6 +95,23 @@ model Host {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model HeroPhone {
+  id              Int      @id @default(autoincrement())
+  uuid            String   @unique
+  title           String
+  description     String?
+  thumbnail       String
+  shortVideo      String?
+  youtubeShortUrl String?
+  youtubeVideoUrl String
+  displayOrder    Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive, displayOrder], map: "HeroPhone_active_order_idx")
 }
 
 model Guide {

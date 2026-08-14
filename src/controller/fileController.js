@@ -7,8 +7,8 @@ const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 
 const episodeCardSelect = {
   id: true, uuid: true, slug: true, title: true, description: true,
-  duration: true, durationInSec: true, link: true, audio: true,
-  thumbnail: true, mimefield: true, createdAt: true, topic: true,
+  duration: true, durationInSec: true, link: true, audio: true, youtubeUrl: true,
+  thumbnail: true, homepageThumbnail: true, mimefield: true, createdAt: true, topic: true,
   episodeNumber: true, isDeleted: true, isFeatured: true,
   podcast: { select: { uuid: true, slug: true, name: true, author: true } },
 };

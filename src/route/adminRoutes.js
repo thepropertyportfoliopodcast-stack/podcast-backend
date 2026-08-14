@@ -3,6 +3,12 @@ const router = require("express").Router();
 const { verifyToken } = require("../utils/tokenVerify");
 const { upload } = require("../utils/FileUploader");
 const { listHosts, getHost, createHost, updateHost } = require("../controller/hostController");
+const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controller/heroPhoneController");
+
+router.get("/admin/hero-phone/get", verifyToken, listAdminHeroPhones);
+router.post("/admin/hero-phone/add", verifyToken, upload.fields([{ name: "thumbnail", maxCount: 1 }, { name: "shortVideo", maxCount: 1 }]), createHeroPhone);
+router.post("/admin/hero-phone/update/:id", verifyToken, upload.fields([{ name: "thumbnail", maxCount: 1 }, { name: "shortVideo", maxCount: 1 }]), updateHeroPhone);
+router.delete("/admin/hero-phone/delete/:id", verifyToken, deleteHeroPhone);
 
 router.get("/admin/host/get", verifyToken, listHosts);
 router.get("/admin/host/get/:id", verifyToken, getHost);
@@ -18,6 +24,7 @@ router.delete("/admin/podcast/delete/:id", verifyToken, DisablePodcast);
 
 router.post("/admin/file/add", verifyToken, upload.fields([
     { name: "thumbnail", maxCount: 1 },
+    { name: "homepageThumbnail", maxCount: 1 },
   ]), AddEpisode);
      
 router.get("/admin/file/getAll", GetAllEpisodes);
@@ -25,6 +32,7 @@ router.get("/admin/file/get/:id", GetEpisodeByUUID);
     
 router.post("/admin/file/update/:id", verifyToken, upload.fields([
     { name: "thumbnail", maxCount: 1 },
+    { name: "homepageThumbnail", maxCount: 1 },
   ]), UpdateEpisode);
 
 router.delete("/admin/file/delete/:id", verifyToken, DeleteEpisode);
