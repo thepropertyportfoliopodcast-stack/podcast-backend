@@ -6,6 +6,20 @@ const prisma = require("../prismaconfig");
 const { error } = require("winston");
 const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 
+const episodeCardSelect = {
+  id: true, uuid: true, slug: true, title: true, description: true,
+  duration: true, durationInSec: true, link: true, audio: true,
+  thumbnail: true, mimefield: true, createdAt: true, topic: true,
+  episodeNumber: true, isDeleted: true, isFeatured: true,
+  podcast: { select: { uuid: true, slug: true, name: true, author: true } },
+};
+
+const relatedEpisodeSelect = {
+  uuid: true, slug: true, title: true, thumbnail: true,
+  duration: true, durationInSec: true, topic: true, episodeNumber: true,
+  podcast: { select: { uuid: true, slug: true, name: true, author: true } },
+};
+
 exports.GetAllPodcasts = catchAsync(async (req, res) => {
   try {
     const data = await prisma.podcast.findMany({
@@ -84,9 +98,7 @@ exports.HomeEpisodesGet = catchAsync(async (req, res) => {
   try {
     const data = await prisma.episode.findMany({
     where: { isDeleted: false, isFeatured: true },
-    include: {
-      podcast: true, 
-    },
+    select: episodeCardSelect,
     orderBy: {
       createdAt: 'desc',
     },
@@ -140,9 +152,7 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
     const [episodes, totalCount, topics] = await Promise.all([
       prisma.episode.findMany({
         where: whereClause,
-        include: {
-          podcast: true,
-        },
+        select: episodeCardSelect,
         orderBy: {
           createdAt: "desc",
         },
@@ -196,17 +206,7 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
         OR: [{ uuid: id }, { slug: id }, { slug: cleanSlug }],
         isDeleted: false,
       },
-      include: {
-        podcast: {
-          include: {
-            episodes: {
-              where: { isDeleted: false },
-              orderBy: { createdAt: "desc" },
-              take: 3,
-            },
-          },
-        },
-      },
+      include: { podcast: { select: { uuid: true, slug: true, name: true, author: true } } },
     });
     if (!file) {
       return errorResponse(res, "File not found", 404);
@@ -214,7 +214,7 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     const selected = Array.isArray(file.relatedEpisodeUuids) ? file.relatedEpisodeUuids.slice(0, 4) : [];
     const relatedRows = selected.length ? await prisma.episode.findMany({
       where: { uuid: { in: selected }, isDeleted: false },
-      include: { podcast: true },
+      select: relatedEpisodeSelect,
     }) : [];
     const byUuid = new Map(relatedRows.map((episode) => [episode.uuid, episode]));
     const relatedEpisodes = selected.map((uuid) => byUuid.get(uuid)).filter(Boolean);
