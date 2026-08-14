@@ -3,7 +3,6 @@ const { v4: uuidv4 } = require('uuid');
 const catchAsync = require("../utils/catchAsync");
 const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploader");
 const prisma = require("../prismaconfig");
-const { error } = require("winston");
 const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 
 const episodeCardSelect = {

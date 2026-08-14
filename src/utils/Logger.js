@@ -61,11 +61,3 @@ const Loggers = winston.createLogger({
 });
 
 module.exports = Loggers;
-
-// Loggers.error("This is an error message");
-// Loggers.warn("This is a warning message");
-// Loggers.info("This is some informational message");
-// Loggers.http("This is an HTTP log");
-// Loggers.verbose("This is a verbose message");
-// Loggers.debug("This is a debug message");
-// Loggers.silly("This is a silly log message");
