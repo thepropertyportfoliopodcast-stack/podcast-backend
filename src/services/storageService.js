@@ -1,7 +1,7 @@
 const multer = require('multer');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
-const { encodeMediaUrl, sanitizeMediaFileName } = require('./mediaUrl');
+const { encodeMediaUrl, sanitizeMediaFileName } = require('../utils/mediaUrl');
 
 /**
  * ✅ AWS S3 Client

@@ -1,8 +1,8 @@
-const { errorResponse, successResponse, validationErrorResponse } = require("../utils/ErrorHandling");
+const { errorResponse, successResponse, validationErrorResponse } = require("../utils/httpResponses");
 const { v4: uuidv4 } = require('uuid');
-const catchAsync = require("../utils/catchAsync");
-const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploader");
-const prisma = require("../prismaconfig");
+const catchAsync = require("../middleware/asyncHandler");
+const { uploadFileToSpaces, deleteFileFromSpaces } = require("../services/storageService");
+const prisma = require("../config/database");
 const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 
 const episodeCardSelect = {
@@ -217,7 +217,15 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     }) : [];
     const byUuid = new Map(relatedRows.map((episode) => [episode.uuid, episode]));
     const relatedEpisodes = selected.map((uuid) => byUuid.get(uuid)).filter(Boolean);
-    return successResponse(res, "File retrieved successfully", 200, { ...file, relatedEpisodes });
+    const allHostSlugs = [...new Set([...(file.hostSlugs || []), ...(file.guestHostSlugs || [])])];
+    const hostRows = allHostSlugs.length ? await prisma.host.findMany({
+      where: { slug: { in: allHostSlugs }, isActive: true },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    }) : [];
+    const hostBySlug = new Map(hostRows.map((host) => [host.slug, host]));
+    const hostProfiles = (file.hostSlugs || []).map((slug) => hostBySlug.get(slug)).filter(Boolean);
+    const guestHostProfiles = (file.guestHostSlugs || []).map((slug) => hostBySlug.get(slug)).filter(Boolean);
+    return successResponse(res, "File retrieved successfully", 200, { ...file, relatedEpisodes, hostProfiles, guestHostProfiles });
   } catch (error) {
     console.error("Get file error:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);

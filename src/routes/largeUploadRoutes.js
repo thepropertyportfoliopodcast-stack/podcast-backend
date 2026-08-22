@@ -4,8 +4,8 @@ const {
   startLargeUpload,
   completeLargeUpload,
   getUploadPartUrl
-} = require("../controller/largeUploadController");
-const { verifyToken } = require("../utils/tokenVerify");
+} = require("../controllers/largeUploadController");
+const { verifyToken } = require("../middleware/authenticate");
 
 // Init multipart
 router.post("/upload/init", verifyToken, startLargeUpload);

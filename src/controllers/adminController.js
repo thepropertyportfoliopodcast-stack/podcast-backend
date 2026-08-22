@@ -1,9 +1,9 @@
-const { errorResponse, successResponse, validationErrorResponse } = require("../utils/ErrorHandling");
+const { errorResponse, successResponse, validationErrorResponse } = require("../utils/httpResponses");
 const { v4: uuidv4 } = require('uuid');
-const catchAsync = require("../utils/catchAsync");
-const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploader");
-const prisma = require("../prismaconfig");
-const { getMediaDurationFromBuffer } = require("../utils/mediaDuration");
+const catchAsync = require("../middleware/asyncHandler");
+const { uploadFileToSpaces, deleteFileFromSpaces } = require("../services/storageService");
+const prisma = require("../config/database");
+const { getMediaDurationFromBuffer } = require("../services/mediaDurationService");
 const { createUniqueSlug } = require("../utils/slug");
 
 const parseStringArray = (value) => {
@@ -279,6 +279,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       primaryKeyword,
       secondaryKeywords
       ,hostSlugs
+      ,guestHostSlugs
       ,spotifyLink
       ,publishedDate
       ,isFeatured
@@ -341,6 +342,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       topicsCovered: parseStringArray(topicsCovered),
       reelLinks: parseStringArray(reelLinks),
       hostSlugs: parseStringArray(hostSlugs),
+      guestHostSlugs: parseStringArray(guestHostSlugs),
       spotifyLink: spotifyLink?.trim() || null,
       isFeatured: String(isFeatured).toLowerCase() === "true",
       relatedEpisodeUuids: parseStringArray(relatedEpisodeUuids).slice(0, 4),
@@ -428,6 +430,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       primaryKeyword,
       secondaryKeywords,
       hostSlugs,
+      guestHostSlugs,
       publishedDate,
       isFeatured,
       relatedEpisodeUuids,
@@ -464,6 +467,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (topicsCovered !== undefined) updates.topicsCovered = parseStringArray(topicsCovered);
     if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
+    if (guestHostSlugs !== undefined) updates.guestHostSlugs = parseStringArray(guestHostSlugs);
     if (isFeatured !== undefined) updates.isFeatured = String(isFeatured).toLowerCase() === "true";
     if (relatedEpisodeUuids !== undefined) updates.relatedEpisodeUuids = parseStringArray(relatedEpisodeUuids).filter((uuid) => uuid !== id).slice(0, 4);
     if (duration !== undefined) updates.duration = Math.round(Number(duration));

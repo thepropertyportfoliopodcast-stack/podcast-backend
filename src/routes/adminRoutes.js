@@ -1,9 +1,15 @@
-const { AddPodcast, GetAllPodcasts, PodcastsDetail, GetAllPodcastswithFiles, UpdatePodcast, AddEpisode, GetEpisodeByUUID, GetAllEpisodes, UpdateEpisode, DeleteEpisode, PermanentDeleteEpisode, DisablePodcast, AddGuide, UpdateGuide, GetAllGuides, UploadCheck, DeleteCheck } = require("../controller/adminController");
+const { AddPodcast, GetAllPodcasts, PodcastsDetail, GetAllPodcastswithFiles, UpdatePodcast, AddEpisode, GetEpisodeByUUID, GetAllEpisodes, UpdateEpisode, DeleteEpisode, PermanentDeleteEpisode, DisablePodcast, AddGuide, UpdateGuide, GetAllGuides, UploadCheck, DeleteCheck } = require("../controllers/adminController");
 const router = require("express").Router();
-const { verifyToken } = require("../utils/tokenVerify");
-const { upload } = require("../utils/FileUploader");
-const { listHosts, getHost, createHost, updateHost } = require("../controller/hostController");
-const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controller/heroPhoneController");
+const { verifyToken } = require("../middleware/authenticate");
+const { upload } = require("../services/storageService");
+const { listHosts, getHost, createHost, updateHost } = require("../controllers/hostController");
+const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
+const { getDashboardAnalytics, getPageSpeedTargets, getPageSpeedAudit, getWebsiteHealth } = require("../controllers/analyticsController");
+
+router.get("/admin/analytics", verifyToken, getDashboardAnalytics);
+router.get("/admin/analytics/pagespeed/pages", verifyToken, getPageSpeedTargets);
+router.get("/admin/analytics/pagespeed", verifyToken, getPageSpeedAudit);
+router.get("/admin/analytics/health", verifyToken, getWebsiteHealth);
 
 router.get("/admin/hero-phone/get", verifyToken, listAdminHeroPhones);
 router.post("/admin/hero-phone/add", verifyToken, upload.fields([{ name: "thumbnail", maxCount: 1 }, { name: "shortVideo", maxCount: 1 }]), createHeroPhone);

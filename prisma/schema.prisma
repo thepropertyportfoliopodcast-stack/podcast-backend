@@ -63,6 +63,7 @@ model Episode {
   topicsCovered       String[]             @default([])
   reelLinks           String[]             @default([])
   hostSlugs           String[]             @default([])
+  guestHostSlugs      String[]             @default([])
   isFeatured          Boolean              @default(false)
   relatedEpisodeUuids String[]             @default([])
   episodeNumber       Int?
@@ -93,8 +94,12 @@ model Host {
   secondaryKeywords String?
   displayOrder      Int      @default(0)
   isActive          Boolean  @default(true)
+  isGuestOnly       Boolean  @default(false)
+  guestTag          String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([isGuestOnly, isActive, displayOrder], map: "Host_guest_active_order_idx")
 }
 
 model HeroPhone {
@@ -135,12 +140,19 @@ model subscriber {
 }
 
 model contact {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String
-  message   String
-  subject   String?
-  createdAt DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  email          String
+  name           String
+  message        String
+  subject        String?
+  kind           String    @default("ENQUIRY")
+  source         String    @default("contact_page")
+  sheetSyncedAt  DateTime?
+  sheetSyncError String?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+  @@index([kind, createdAt])
 }
 
 model DistributionStatus {
@@ -158,4 +170,45 @@ model DistributionStatus {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime
   Episode            Episode   @relation(fields: [episodeId], references: [id])
+}
+
+model AnalyticsSession {
+  id              String           @id
+  visitorId       String
+  firstSeenAt     DateTime         @default(now())
+  lastSeenAt      DateTime         @default(now())
+  landingPage     String
+  referrer        String?
+  source          String?
+  medium          String?
+  campaign        String?
+  deviceType      String?
+  browser         String?
+  operatingSystem String?
+  country         String?
+  ipHash          String?
+  events          AnalyticsEvent[]
+
+  @@index([visitorId, firstSeenAt])
+  @@index([lastSeenAt])
+}
+
+model AnalyticsEvent {
+  id        Int              @id @default(autoincrement())
+  eventId   String           @unique
+  sessionId String
+  visitorId String
+  name      String
+  path      String
+  title     String?
+  value     Float?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  session   AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([name, createdAt])
+  @@index([path, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([visitorId, createdAt])
 }

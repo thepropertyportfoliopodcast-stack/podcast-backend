@@ -1,32 +1,46 @@
 const dotenv = require("dotenv");
 dotenv.config();
 
-require("./prismaconfig");
+require("./config/database");
 const express = require("express");
 const app = express();
 const cors = require("cors");
 
+const allowedOrigins = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://thepropertyportfolio.com.au",
+  "https://www.thepropertyportfolio.com.au",
+  ...(process.env.CORS_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
+]);
+
 const corsOptions = {
-  origin: "*", // Allowed origins
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  allowedHeaders: "*", // Allow all headers
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   credentials: true,
-  optionsSuccessStatus: 200, // for legacy browsers
+  optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
 
 app.use(express.json({ limit: "2000mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2000mb" }));
 
+const { collectAnalytics } = require("./controllers/analyticsController");
+app.post("/api/analytics/collect", collectAnalytics);
+
 const PORT = process.env.REACT_APP_SERVER_DOMAIN || 5000;
 
-app.use("/api", require("./route/userRoutes"));
-app.use("/", require("./route/rssRoutes"));
-app.use("/api", require("./route/fileRoutes"));
-app.use("/api", require("./route/subscriberRoutes"));
-app.use("/api", require("./route/contactRoutes"));
-app.use("/api", require("./route/adminRoutes"));
-app.use("/api", require("./route/uploadLarge"));
+app.use("/api", require("./routes/userRoutes"));
+app.use("/", require("./routes/rssRoutes"));
+app.use("/api", require("./routes/fileRoutes"));
+app.use("/api", require("./routes/subscriberRoutes"));
+app.use("/api", require("./routes/contactRoutes"));
+app.use("/api", require("./routes/adminRoutes"));
+app.use("/api", require("./routes/largeUploadRoutes"));
 
 app.get("/", (req, res) => {
   res.json({

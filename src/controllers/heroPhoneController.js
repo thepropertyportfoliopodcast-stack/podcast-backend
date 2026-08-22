@@ -1,8 +1,8 @@
 const { v4: uuidv4 } = require("uuid");
-const catchAsync = require("../utils/catchAsync");
-const prisma = require("../prismaconfig");
-const { errorResponse, successResponse } = require("../utils/ErrorHandling");
-const { uploadFileToSpaces, deleteFileFromSpaces } = require("../utils/FileUploader");
+const catchAsync = require("../middleware/asyncHandler");
+const prisma = require("../config/database");
+const { errorResponse, successResponse } = require("../utils/httpResponses");
+const { uploadFileToSpaces, deleteFileFromSpaces } = require("../services/storageService");
 
 const filesFrom = (req) => ({
   thumbnail: req.files?.thumbnail?.[0],

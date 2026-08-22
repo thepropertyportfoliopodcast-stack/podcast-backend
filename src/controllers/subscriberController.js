@@ -1,6 +1,6 @@
-const catchAsync = require("../utils/catchAsync");
-const { successResponse, errorResponse, validationErrorResponse } = require("../utils/ErrorHandling");
-const prisma = require("../prismaconfig");
+const catchAsync = require("../middleware/asyncHandler");
+const { successResponse, errorResponse, validationErrorResponse } = require("../utils/httpResponses");
+const prisma = require("../config/database");
 
 exports.AddSubscriber = catchAsync(async (req, res) => {
     try {

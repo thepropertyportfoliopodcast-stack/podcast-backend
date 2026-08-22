@@ -1,5 +1,5 @@
-const { signup, login, GetUser, Dashboard } = require("../controller/userController");
-const { verifyToken } = require("../utils/tokenVerify");
+const { signup, login, GetUser, Dashboard } = require("../controllers/userController");
+const { verifyToken } = require("../middleware/authenticate");
 
 const router = require("express").Router();
 

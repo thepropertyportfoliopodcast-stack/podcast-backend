@@ -1,4 +1,4 @@
-const { AddSubscriber, SubscriberGet } = require("../controller/subscriberController");
+const { AddSubscriber, SubscriberGet } = require("../controllers/subscriberController");
 const router =  require("express").Router();
 
 router.post("/subscriber/add" ,  AddSubscriber);

@@ -1,8 +1,8 @@
-const { GetAllPodcasts, PodcastsDetail, UploadCheck, GetAllPodcastswithFiles, GetAllFiles, GetFileByUUID, HomeEpisodesGet, GetAllGuides, HomeGuideGet } = require("../controller/fileController");
+const { GetAllPodcasts, PodcastsDetail, UploadCheck, GetAllPodcastswithFiles, GetAllFiles, GetFileByUUID, HomeEpisodesGet, GetAllGuides, HomeGuideGet } = require("../controllers/fileController");
 const router = require("express").Router();
-const { upload } = require("../utils/FileUploader");
-const { listHosts, getHost } = require("../controller/hostController");
-const { listPublicHeroPhones } = require("../controller/heroPhoneController");
+const { upload } = require("../services/storageService");
+const { listHosts, getHost } = require("../controllers/hostController");
+const { listPublicHeroPhones } = require("../controllers/heroPhoneController");
 
 router.get("/hero-phone/get", listPublicHeroPhones);
 

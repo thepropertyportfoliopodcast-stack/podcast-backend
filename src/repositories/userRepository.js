@@ -1,4 +1,4 @@
-const prisma = require("../prismaconfig");
+const prisma = require("../config/database");
 
 exports.createUser = async (data) => {
   const { name, email, password } = data;

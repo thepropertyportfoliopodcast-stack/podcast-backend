@@ -1,10 +1,10 @@
-const { errorResponse, successResponse, validationErrorResponse } = require("../utils/ErrorHandling");
+const { errorResponse, successResponse, validationErrorResponse } = require("../utils/httpResponses");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const catchAsync = require("../utils/catchAsync");
-const prisma = require("../prismaconfig");
-const { createUser, getUser } = require("../queries/userQueries");
-const Loggers = require("../utils/Logger");
+const catchAsync = require("../middleware/asyncHandler");
+const prisma = require("../config/database");
+const { createUser, getUser } = require("../repositories/userRepository");
+const Loggers = require("../utils/logger");
 
 const signEmail = async (id) => {
   const token = jwt.sign({ id }, process.env.JWT_SECRET_KEY, {

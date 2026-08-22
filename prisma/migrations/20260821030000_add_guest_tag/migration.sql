@@ -1,0 +1,1 @@
+ALTER TABLE "Host" ADD COLUMN "guestTag" TEXT;

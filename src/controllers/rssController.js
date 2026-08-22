@@ -1,6 +1,6 @@
-const { errorResponse } = require("../utils/ErrorHandling");
-const catchAsync = require("../utils/catchAsync");
-const prisma = require("../prismaconfig");
+const { errorResponse } = require("../utils/httpResponses");
+const catchAsync = require("../middleware/asyncHandler");
+const prisma = require("../config/database");
 const { create } = require("xmlbuilder2");
 const { encodeMediaUrl } = require("../utils/mediaUrl");
 

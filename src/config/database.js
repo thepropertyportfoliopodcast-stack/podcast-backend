@@ -1,4 +1,4 @@
-// prisma.js or prismaconfig.js
+// Shared Prisma client used by repositories and controllers.
 const { PrismaClient } = require('@prisma/client');
 
 let prisma;
