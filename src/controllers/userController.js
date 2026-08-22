@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const catchAsync = require("../middleware/asyncHandler");
 const prisma = require("../config/database");
 const { createUser, getUser } = require("../repositories/userRepository");
-const Loggers = require("../utils/logger");
+const Loggers = require("../utils/Logger");
 
 const signEmail = async (id) => {
   const token = jwt.sign({ id }, process.env.JWT_SECRET_KEY, {
