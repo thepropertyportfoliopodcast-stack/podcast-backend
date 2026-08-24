@@ -26,10 +26,28 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Unauthorized" })).setMimeType(ContentService.MimeType.JSON);
   }
   const r = payload.record || {};
-  SpreadsheetApp.getActive().getSheetByName("Enquiries").appendRow([
-    r.createdAt, r.kind, r.name, r.email, r.subject, r.message, r.source, r.id
-  ]);
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Enquiries");
+  if (!sheet) return json({ ok: false, error: "The Enquiries tab does not exist" });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const id = String(r.id || "");
+    if (id && sheet.getLastRow() > 1) {
+      const existing = sheet.getRange(2, 8, sheet.getLastRow() - 1, 1)
+        .createTextFinder(id).matchEntireCell(true).findNext();
+      if (existing) return json({ ok: true, duplicate: true });
+    }
+    sheet.appendRow([r.createdAt, r.kind, r.name, r.email, r.subject, r.message, r.source, r.id]);
+    return json({ ok: true });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function json(value) {
+  return ContentService.createTextOutput(JSON.stringify(value))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 ```
 
