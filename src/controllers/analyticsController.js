@@ -16,14 +16,24 @@ const STANDARD_CHROME_PATHS = [
   "/snap/bin/chromium",
 ];
 
-function resolveChromePath(chromeLauncher) {
-  const configuredPath = process.env.LIGHTHOUSE_CHROME_PATH || process.env.CHROME_PATH;
-  if (configuredPath) {
-    if (!fs.existsSync(configuredPath)) {
-      throw new Error(`Configured Chrome executable does not exist: ${configuredPath}`);
-    }
-    return configuredPath;
+function getPuppeteerChromePath(puppeteer) {
+  const executablePath = puppeteer?.executablePath || puppeteer?.default?.executablePath;
+  if (typeof executablePath !== "function") return null;
+
+  try {
+    const chromePath = executablePath();
+    return chromePath && fs.existsSync(chromePath) ? chromePath : null;
+  } catch (_) {
+    return null;
   }
+}
+
+function resolveChromePath(chromeLauncher, puppeteer) {
+  const configuredPath = process.env.LIGHTHOUSE_CHROME_PATH || process.env.CHROME_PATH;
+  if (configuredPath && fs.existsSync(configuredPath)) return configuredPath;
+
+  const puppeteerPath = getPuppeteerChromePath(puppeteer);
+  if (puppeteerPath) return puppeteerPath;
 
   const standardPath = STANDARD_CHROME_PATHS.find((candidate) => fs.existsSync(candidate));
   if (standardPath) return standardPath;
@@ -35,7 +45,8 @@ function resolveChromePath(chromeLauncher) {
     // The actionable error below is returned to the dashboard.
   }
 
-  throw new Error("Chrome/Chromium was not found on the API server. Install chromium and set LIGHTHOUSE_CHROME_PATH to its executable path");
+  const configuredMessage = configuredPath ? ` Configured path does not exist: ${configuredPath}.` : "";
+  throw new Error(`Chrome/Chromium was not found on the API server.${configuredMessage} Run npm ci without PUPPETEER_SKIP_DOWNLOAD so Puppeteer can install its bundled browser`);
 }
 
 function enqueueLighthouse(task) {
@@ -47,8 +58,12 @@ function enqueueLighthouse(task) {
 async function runLighthouse(url, strategy) {
   let chrome;
   try {
-    const [{ default: lighthouse }, chromeLauncher] = await Promise.all([import("lighthouse"), import("chrome-launcher")]);
-    const chromePath = resolveChromePath(chromeLauncher);
+    const [{ default: lighthouse }, chromeLauncher, puppeteer] = await Promise.all([
+      import("lighthouse"),
+      import("chrome-launcher"),
+      import("puppeteer"),
+    ]);
+    const chromePath = resolveChromePath(chromeLauncher, puppeteer);
     chrome = await chromeLauncher.launch({
       chromePath,
       chromeFlags: ["--headless=new", "--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
@@ -121,8 +136,8 @@ exports.getLighthouseTargets = catchAsync(async (req, res) => {
   const pages = await buildPublicPages();
   let runtime;
   try {
-    const chromeLauncher = await import("chrome-launcher");
-    runtime = { ready: true, chromePath: resolveChromePath(chromeLauncher), engine: "Lighthouse (self-hosted)" };
+    const [chromeLauncher, puppeteer] = await Promise.all([import("chrome-launcher"), import("puppeteer")]);
+    runtime = { ready: true, chromePath: resolveChromePath(chromeLauncher, puppeteer), engine: "Lighthouse (self-hosted)" };
   } catch (error) {
     runtime = { ready: false, error: error.message, engine: "Lighthouse (self-hosted)" };
   }
