@@ -5,7 +5,7 @@ const { ADMIN_PERMISSIONS } = require("../config/adminPermissions");
 const { upload } = require("../services/storageService");
 const { listHosts, getHost, createHost, updateHost } = require("../controllers/hostController");
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
-const { getDashboardAnalytics, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth } = require("../controllers/analyticsController");
+const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth } = require("../controllers/analyticsController");
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin } = require("../controllers/adminUserController");
 
 const access = (permission) => [verifyToken, requirePermission(permission)];
@@ -16,6 +16,8 @@ router.patch("/admin/users/:id", verifyToken, requireSuperAdmin, updateAdmin);
 router.delete("/admin/users/:id", verifyToken, requireSuperAdmin, deleteAdmin);
 
 router.get("/admin/analytics", ...access(ADMIN_PERMISSIONS.ANALYTICS), getDashboardAnalytics);
+router.delete("/admin/analytics/errors", ...access(ADMIN_PERMISSIONS.ANALYTICS), clearAnalyticsErrors);
+router.delete("/admin/analytics/errors/:id", ...access(ADMIN_PERMISSIONS.ANALYTICS), deleteAnalyticsError);
 router.get("/admin/analytics/lighthouse/pages", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseTargets);
 router.get("/admin/analytics/lighthouse", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseAudit);
 router.get("/admin/analytics/health", ...access(ADMIN_PERMISSIONS.ANALYTICS), getWebsiteHealth);

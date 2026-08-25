@@ -8,11 +8,14 @@ The admin dashboard uses first-party events stored in PostgreSQL. It does not re
 WEBSITE_URL="https://thepropertyportfolio.com.au"
 LIGHTHOUSE_CHROME_PATH="optional-absolute-path-to-chrome"
 ANALYTICS_SALT="a-long-random-secret"
+ANALYTICS_ERROR_AUTO_RESOLVE_HOURS="12"
 GOOGLE_SHEETS_WEB_APP_URL="https://script.google.com/macros/s/DEPLOYMENT_ID/exec"
 GOOGLE_SHEETS_WEBHOOK_SECRET="a-different-long-random-secret"
 ```
 
 Generate secrets with `openssl rand -hex 32`.
+
+Browser and resource errors are grouped into issues. An issue is marked resolved and removed from the active dashboard after 12 hours without another matching occurrence; change `ANALYTICS_ERROR_AUTO_RESOLVE_HOURS` to use a different quiet period. Admins can also permanently delete one grouped issue or clear the complete error history from the dashboard.
 
 ## Google Sheet without Google Cloud
 

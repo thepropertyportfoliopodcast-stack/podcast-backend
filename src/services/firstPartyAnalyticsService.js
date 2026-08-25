@@ -3,7 +3,11 @@ const prisma = require("../config/database");
 const { buildPublicPages } = require("./publicPageCatalogService");
 
 const allowedEvents = new Set(["page_view", "engagement", "scroll_depth", "outbound_click", "web_vital", "media_play", "form_submit", "browser_error", "resource_error"]);
+const errorEventNames = ["browser_error", "resource_error"];
+const configuredQuietHours = Number(process.env.ANALYTICS_ERROR_AUTO_RESOLVE_HOURS);
+const errorAutoResolveHours = Number.isFinite(configuredQuietHours) && configuredQuietHours > 0 ? configuredQuietHours : 12;
 const clean = (value, max = 500) => typeof value === "string" ? value.trim().slice(0, max) : null;
+const cleanPath = (value = "") => value.split("?")[0] || "/";
 
 function parseAgent(agent = "", width = 0) {
   const mobile = /Android|iPhone|iPod|Mobile/i.test(agent);
@@ -54,7 +58,72 @@ function parseDate(value, endOfDay = false) {
   return Number.isNaN(parsed.getTime()) || dateKey(parsed) !== value ? null : parsed;
 }
 
+function errorDescriptor(event) {
+  const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  return {
+    type: event.name,
+    path: cleanPath(event.path),
+    message: clean(metadata.message || metadata.source || "Unknown browser error", 500) || "Unknown browser error",
+    source: clean(metadata.source, 500),
+    line: metadata.line || null,
+  };
+}
+
+function errorFingerprint(event) {
+  const issue = errorDescriptor(event);
+  return crypto.createHash("sha256").update(JSON.stringify([issue.type, issue.path, issue.message, issue.source, issue.line])).digest("hex");
+}
+
+async function resolveQuietErrors() {
+  const unresolved = await prisma.analyticsEvent.findMany({
+    where: { name: { in: errorEventNames }, isResolved: false },
+    select: { id: true, name: true, path: true, metadata: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!unresolved.length) return 0;
+  const groups = new Map();
+  unresolved.forEach((event) => {
+    const key = errorFingerprint(event);
+    const group = groups.get(key) || { ids: [], lastSeenAt: event.createdAt };
+    group.ids.push(event.id);
+    if (event.createdAt > group.lastSeenAt) group.lastSeenAt = event.createdAt;
+    groups.set(key, group);
+  });
+  const cutoff = new Date(Date.now() - errorAutoResolveHours * 60 * 60 * 1000);
+  const resolvedIds = [...groups.values()].filter((group) => group.lastSeenAt <= cutoff).flatMap((group) => group.ids);
+  if (!resolvedIds.length) return 0;
+  const result = await prisma.analyticsEvent.updateMany({
+    where: { id: { in: resolvedIds }, isResolved: false },
+    data: { isResolved: true, resolvedAt: new Date() },
+  });
+  return result.count;
+}
+
+async function deleteErrorIssue(id) {
+  const issueId = Number(id);
+  if (!Number.isInteger(issueId) || issueId <= 0) return null;
+  const target = await prisma.analyticsEvent.findFirst({
+    where: { id: issueId, name: { in: errorEventNames } },
+    select: { id: true, name: true, path: true, metadata: true, createdAt: true },
+  });
+  if (!target) return null;
+  const fingerprint = errorFingerprint(target);
+  const candidates = await prisma.analyticsEvent.findMany({
+    where: { name: target.name },
+    select: { id: true, name: true, path: true, metadata: true, createdAt: true },
+  });
+  const ids = candidates.filter((event) => errorFingerprint(event) === fingerprint).map((event) => event.id);
+  const result = await prisma.analyticsEvent.deleteMany({ where: { id: { in: ids } } });
+  return { issueId, deleted: result.count };
+}
+
+async function clearErrors() {
+  const result = await prisma.analyticsEvent.deleteMany({ where: { name: { in: errorEventNames } } });
+  return { deleted: result.count };
+}
+
 async function report(requestedRange = {}) {
+  await resolveQuietErrors();
   const today = dateKey(new Date());
   const availability = await prisma.analyticsEvent.aggregate({ _min: { createdAt: true } });
   const minDate = availability._min.createdAt ? dateKey(availability._min.createdAt) : today;
@@ -68,12 +137,11 @@ async function report(requestedRange = {}) {
     throw error;
   }
   const [events, sessions, realtime, publicPages] = await Promise.all([
-    prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start, lte: end } }, select: { name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
+    prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start, lte: end } }, select: { id: true, name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true, isResolved: true }, orderBy: { createdAt: "asc" } }),
     prisma.analyticsSession.findMany({ where: { firstSeenAt: { lte: end }, lastSeenAt: { gte: start } }, select: { id: true, visitorId: true, landingPage: true, referrer: true, source: true, medium: true, campaign: true, deviceType: true, browser: true, operatingSystem: true, country: true, firstSeenAt: true, lastSeenAt: true } }),
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 60000) }, name: "page_view" }, select: { sessionId: true, path: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
     buildPublicPages(),
   ]);
-  const cleanPath = (value = "") => value.split("?")[0] || "/";
   const seoTitleByPath = new Map(publicPages.map((page) => [page.path, page.seoTitle]));
   const pageTitle = (path, fallback) => seoTitleByPath.get(cleanPath(path)) || fallback || cleanPath(path);
   const pageViews = events.filter((event) => event.name === "page_view");
@@ -95,7 +163,23 @@ async function report(requestedRange = {}) {
   const vitals = {};
   events.filter((event)=>event.name === "web_vital").forEach((event)=>{ const metric = event.metadata?.metric; if (metric) (vitals[metric] ||= []).push(event.value || 0); });
   const outbound = events.filter((event)=>event.name === "outbound_click");
-  const errorEvents = events.filter((event)=>event.name === "browser_error" || event.name === "resource_error");
+  const errorEvents = events.filter((event)=>errorEventNames.includes(event.name) && !event.isResolved);
+  const errorIssueMap = new Map();
+  errorEvents.forEach((event) => {
+    const fingerprint = errorFingerprint(event);
+    const details = errorDescriptor(event);
+    const issue = errorIssueMap.get(fingerprint) || { id: event.id, ...details, title: pageTitle(event.path, event.title), count: 0, firstSeenAt: event.createdAt, lastSeenAt: event.createdAt, createdAt: event.createdAt };
+    issue.count += 1;
+    if (event.createdAt < issue.firstSeenAt) issue.firstSeenAt = event.createdAt;
+    if (event.createdAt >= issue.lastSeenAt) {
+      issue.id = event.id;
+      issue.lastSeenAt = event.createdAt;
+      issue.createdAt = event.createdAt;
+      issue.title = pageTitle(event.path, event.title);
+    }
+    errorIssueMap.set(fingerprint, issue);
+  });
+  const errorIssues = [...errorIssueMap.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
   const platform = (pattern) => outbound.filter((event)=>pattern.test(event.metadata?.url || "")).length;
   const sessionMap = new Map(sessions.map((session) => [session.id, session]));
   const sessionSource = (session) => session?.source || (session?.referrer ? (() => { try { return new URL(session.referrer).hostname; } catch { return "Referral"; } })() : "Direct");
@@ -156,19 +240,13 @@ async function report(requestedRange = {}) {
     events: countBy(events, (e)=>e.name), scrollDepth: { 25: events.filter((e)=>e.name === "scroll_depth" && e.value >= 25).length, 50: events.filter((e)=>e.name === "scroll_depth" && e.value >= 50).length, 75: events.filter((e)=>e.name === "scroll_depth" && e.value >= 75).length, 100: events.filter((e)=>e.name === "scroll_depth" && e.value >= 100).length },
     webVitals: Object.fromEntries(Object.entries(vitals).map(([name,values])=>[name,{ p75: percentile(values), samples: values.length }])),
     errors: {
-      total: errorEvents.length,
+      total: errorIssues.length,
+      occurrences: errorEvents.length,
+      autoResolveHours: errorAutoResolveHours,
       pages: countBy(errorEvents, (event)=>pageTitle(event.path)).slice(0,25),
-      recent: errorEvents.slice(-50).reverse().map((event)=>({
-        type: event.name,
-        path: event.path,
-        title: pageTitle(event.path, event.title),
-        message: clean(event.metadata?.message || event.metadata?.source || "Unknown browser error", 500),
-        source: clean(event.metadata?.source, 500),
-        line: event.metadata?.line || null,
-        createdAt: event.createdAt,
-      })),
+      recent: errorIssues.slice(0, 50),
     },
   };
 }
 
-module.exports = { collect, report };
+module.exports = { collect, report, deleteErrorIssue, clearErrors };

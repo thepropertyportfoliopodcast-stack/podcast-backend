@@ -104,6 +104,17 @@ exports.getDashboardAnalytics = catchAsync(async (req, res) => {
   return successResponse(res, "Analytics retrieved", 200, { analytics });
 });
 
+exports.deleteAnalyticsError = catchAsync(async (req, res) => {
+  const result = await firstPartyAnalytics.deleteErrorIssue(req.params.id);
+  if (!result) return errorResponse(res, "Analytics error was not found", 404);
+  return successResponse(res, "Analytics error deleted", 200, result);
+});
+
+exports.clearAnalyticsErrors = catchAsync(async (req, res) => {
+  const result = await firstPartyAnalytics.clearErrors();
+  return successResponse(res, "Analytics errors cleared", 200, result);
+});
+
 exports.getLighthouseTargets = catchAsync(async (req, res) => {
   const pages = await buildPublicPages();
   let runtime;
