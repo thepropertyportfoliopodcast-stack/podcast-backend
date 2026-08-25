@@ -12,8 +12,5 @@ exports.createUser = async (data) => {
 
 exports.getUser = async (data) => {
   const { email } = data;
-  const result = await prisma.$queryRaw`
-    SELECT * FROM "User" WHERE email=${email};
-  `;
-  return result[0];
+  return prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
 };

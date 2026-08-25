@@ -18,6 +18,69 @@ const parseStringArray = (value) => {
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 };
 
+const requestFile = (req, fieldname) => Array.isArray(req.files)
+  ? req.files.find((file) => file.fieldname === fieldname)
+  : req.files?.[fieldname]?.[0];
+
+const parseHeroPhones = (value) => {
+  if (!value) return [];
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.slice(0, 20) : [];
+  } catch {
+    return [];
+  }
+};
+
+const isEpisodeArtwork = (url, episode) => !url || url === episode.thumbnail || url === episode.homepageThumbnail;
+
+async function syncEpisodeHeroPhones(req, episode, enabled) {
+  const existing = await prisma.heroPhone.findMany({ where: { episodeId: episode.id } });
+  if (!enabled) {
+    await prisma.heroPhone.deleteMany({ where: { episodeId: episode.id } });
+    await Promise.all(existing.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode)).map((url) => deleteFileFromSpaces(url)));
+    return [];
+  }
+  const definitions = parseHeroPhones(req.body.heroPhones);
+  if (!definitions.length) throw new Error("Add at least one Home_Page_Hero_Phone item or turn the option off");
+  const kept = new Set();
+  const saved = [];
+  for (let index = 0; index < definitions.length; index += 1) {
+    const definition = definitions[index] || {};
+    const current = definition.uuid ? existing.find((phone) => phone.uuid === definition.uuid) : null;
+    const thumbnailFile = requestFile(req, `heroPhoneThumbnail_${index}`);
+    const shortVideoFile = requestFile(req, `heroPhoneVideo_${index}`);
+    const uploadedThumbnail = thumbnailFile ? await uploadFileToSpaces(thumbnailFile) : null;
+    const uploadedShortVideo = shortVideoFile ? await uploadFileToSpaces(shortVideoFile) : null;
+    const title = definition.title?.trim() || episode.title;
+    const youtubeVideoUrl = definition.youtubeVideoUrl?.trim() || episode.youtubeUrl;
+    if (!title || !youtubeVideoUrl) throw new Error(`Hero phone ${index + 1} needs a title and full YouTube video URL`);
+    const data = {
+      title,
+      description: definition.description?.trim() || episode.description || null,
+      thumbnail: uploadedThumbnail || current?.thumbnail || episode.homepageThumbnail || episode.thumbnail,
+      shortVideo: uploadedShortVideo || (definition.removeShortVideo ? null : current?.shortVideo) || null,
+      youtubeShortUrl: definition.youtubeShortUrl?.trim() || null,
+      youtubeVideoUrl,
+      displayOrder: index,
+      isActive: definition.isActive !== false,
+      episodeId: episode.id,
+    };
+    const phone = current
+      ? await prisma.heroPhone.update({ where: { id: current.id }, data })
+      : await prisma.heroPhone.create({ data: { uuid: uuidv4(), ...data } });
+    kept.add(phone.id); saved.push(phone);
+    const obsoleteMedia = [uploadedThumbnail && current?.thumbnail, (uploadedShortVideo || definition.removeShortVideo) && current?.shortVideo].filter((url) => !isEpisodeArtwork(url, episode));
+    await Promise.all(obsoleteMedia.map((url) => deleteFileFromSpaces(url)));
+  }
+  const removed = existing.filter((phone) => !kept.has(phone.id));
+  if (removed.length) {
+    await prisma.heroPhone.deleteMany({ where: { id: { in: removed.map((phone) => phone.id) } } });
+    await Promise.all(removed.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode)).map((url) => deleteFileFromSpaces(url)));
+  }
+  return saved;
+}
+
 
 
 exports.AddPodcast = catchAsync(async (req, res) => {
@@ -284,6 +347,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ,publishedDate
       ,isFeatured
       ,relatedEpisodeUuids
+      ,homePageHeroPhone
     } = req.body;
 
     if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
@@ -296,12 +360,14 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 
     let thumbnail = "";
     // console.log("req.files", req.files);
-    if (req.files?.thumbnail) {
-      thumbnail = await uploadFileToSpaces(req.files.thumbnail[0]);
+    const thumbnailFile = requestFile(req, "thumbnail");
+    if (thumbnailFile) {
+      thumbnail = await uploadFileToSpaces(thumbnailFile);
     }
     let homepageThumbnail = null;
-    if (req.files?.homepageThumbnail?.[0]) {
-      homepageThumbnail = await uploadFileToSpaces(req.files.homepageThumbnail[0]);
+    const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
+    if (homepageThumbnailFile) {
+      homepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
     }
     // console.log("thumbnail", thumbnail);
 
@@ -350,8 +416,9 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     };
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
+    const heroPhones = await syncEpisodeHeroPhones(req, newEpisode, String(homePageHeroPhone).toLowerCase() === "true");
 
-    return successResponse(res, "Episode uploaded successfully", 201, newEpisode);
+    return successResponse(res, "Episode uploaded successfully", 201, { ...newEpisode, heroPhones });
   } catch (error) {
     console.error("Error in AddEpisode:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);
@@ -390,6 +457,7 @@ exports.GetEpisodeByUUID = catchAsync(async (req, res) => {
       where: { uuid: id },
       include: {
         podcast: true,
+        heroPhones: { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] },
       },
     });
     if (!file) {
@@ -434,6 +502,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       publishedDate,
       isFeatured,
       relatedEpisodeUuids,
+      homePageHeroPhone,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -445,6 +514,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
 
     const existingEpisode = await prisma.episode.findUnique({
       where: { uuid: id },
+      include: { heroPhones: true },
     });
 
     if (!existingEpisode) {
@@ -485,24 +555,26 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     }
 
     // Handle thumbnail update only if new file comes
-    if (req.files?.thumbnail?.[0]) {
+    const thumbnailFile = requestFile(req, "thumbnail");
+    if (thumbnailFile) {
       const isThumbDeleted = await deleteFileFromSpaces(existingEpisode.thumbnail);
       if (!isThumbDeleted) {
         console.warn("Failed to delete old thumbnail");
       }
 
-      const newThumbUrl = await uploadFileToSpaces(req.files.thumbnail[0]);
+      const newThumbUrl = await uploadFileToSpaces(thumbnailFile);
       updates.thumbnail = newThumbUrl;
     }
 
-    if (req.files?.homepageThumbnail?.[0]) {
+    const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
+    if (homepageThumbnailFile) {
       if (existingEpisode.homepageThumbnail) {
         const isHomepageThumbDeleted = await deleteFileFromSpaces(existingEpisode.homepageThumbnail);
         if (!isHomepageThumbDeleted) {
           console.warn("Failed to delete old homepage thumbnail");
         }
       }
-      updates.homepageThumbnail = await uploadFileToSpaces(req.files.homepageThumbnail[0]);
+      updates.homepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
     }
 
     const isValidLink =
@@ -547,8 +619,9 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       where: { uuid: id },
       data: updates,
     });
+    const heroPhones = await syncEpisodeHeroPhones(req, updatedEpisode, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true");
 
-    return successResponse(res, "Episode updated successfully", 200, updatedEpisode);
+    return successResponse(res, "Episode updated successfully", 200, { ...updatedEpisode, heroPhones });
   } catch (error) {
     console.error("Error in UpdateEpisode:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);
@@ -561,6 +634,7 @@ exports.DeleteEpisode = catchAsync(async (req, res) => {
 
     const episode = await prisma.episode.findUnique({
       where: { uuid: id },
+      include: { heroPhones: true },
     });
 
     if (!episode) {
@@ -587,6 +661,7 @@ exports.PermanentDeleteEpisode = catchAsync(async (req, res) => {
 
     const episode = await prisma.episode.findUnique({
       where: { uuid: id },
+      include: { heroPhones: true },
     });
 
     if (!episode) {
@@ -598,7 +673,7 @@ exports.PermanentDeleteEpisode = catchAsync(async (req, res) => {
       prisma.episode.delete({ where: { uuid: id } }),
     ]);
 
-    const urlsToDelete = [episode.thumbnail, episode.homepageThumbnail, episode.link, episode.audio].filter(Boolean);
+    const urlsToDelete = [episode.thumbnail, episode.homepageThumbnail, episode.link, episode.audio, ...episode.heroPhones.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode))].filter(Boolean);
     const results = await Promise.allSettled(urlsToDelete.map((url) => deleteFileFromSpaces(url)));
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed) console.warn("PermanentDeleteEpisode: failed to delete some files", { failed });

@@ -14,10 +14,17 @@ const removeMedia = async (...urls) => {
 };
 
 exports.listPublicHeroPhones = catchAsync(async (_req, res) => {
-  const phones = await prisma.heroPhone.findMany({
-    where: { isActive: true },
-    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+  const linked = await prisma.heroPhone.findMany({
+    where: { isActive: true, episodeId: { not: null }, episode: { isDeleted: false } },
+    orderBy: [{ episode: { createdAt: "desc" } }, { createdAt: "desc" }],
+    take: 3,
   });
+  const fallback = linked.length < 3 ? await prisma.heroPhone.findMany({
+    where: { isActive: true, episodeId: null },
+    orderBy: [{ createdAt: "desc" }, { displayOrder: "asc" }],
+    take: 3 - linked.length,
+  }) : [];
+  const phones = [...linked, ...fallback];
   return successResponse(res, "Hero phones retrieved successfully", 200, phones);
 });
 

@@ -20,24 +20,39 @@ async function getPageSpeed(url, strategy) {
   const key = `${url}:${strategy}`;
   const cached = pageSpeedCache.get(key);
   if (cached?.expiresAt > Date.now()) return { ...cached.data, cached: true };
-  const params = new URLSearchParams({ url, strategy });
-  if (process.env.PAGESPEED_API_KEY) params.set("key", process.env.PAGESPEED_API_KEY);
-  ["performance", "accessibility", "best-practices", "seo"].forEach((category) => params.append("category", category));
-  const response = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params}`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || "PageSpeed request failed");
-  const categories = data.lighthouseResult?.categories || {};
-  const audits = data.lighthouseResult?.audits || {};
-  const opportunities = Object.values(audits).filter((item) => item.details?.type === "opportunity" && item.score !== null && item.score < .9).sort((a,b)=>(b.details?.overallSavingsMs||0)-(a.details?.overallSavingsMs||0)).slice(0,10).map((item)=>({ id:item.id, title:item.title, description:item.description, savingsMs:Math.round(item.details?.overallSavingsMs||0), savingsBytes:item.details?.overallSavingsBytes||0 }));
-  const result = {
-    configured: true,
-    scores: Object.fromEntries(Object.entries(categories).map(([name, item]) => [name, Math.round((item.score || 0) * 100)])),
-    metrics: { lcp: audits["largest-contentful-paint"]?.displayValue, cls: audits["cumulative-layout-shift"]?.displayValue, inp: audits["interaction-to-next-paint"]?.displayValue || audits["total-blocking-time"]?.displayValue, fcp: audits["first-contentful-paint"]?.displayValue, speedIndex: audits["speed-index"]?.displayValue, ttfb: audits["server-response-time"]?.displayValue },
-    opportunities,
-    fetchedAt: new Date().toISOString(),
-  };
-  pageSpeedCache.set(key, { expiresAt: Date.now() + 30 * 60 * 1000, data: result });
-  return result;
+  let chrome;
+  try {
+    const [{ default: lighthouse }, chromeLauncher] = await Promise.all([import("lighthouse"), import("chrome-launcher")]);
+    chrome = await chromeLauncher.launch({
+      chromePath: process.env.LIGHTHOUSE_CHROME_PATH || undefined,
+      chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+    });
+    const flags = {
+      port: chrome.port,
+      output: "json",
+      logLevel: "error",
+      onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
+      ...(strategy === "desktop" ? { preset: "desktop" } : {}),
+    };
+    const run = await lighthouse(url, flags);
+    const categories = run?.lhr?.categories || {};
+    const audits = run?.lhr?.audits || {};
+    const opportunities = Object.values(audits).filter((item) => item.details?.type === "opportunity" && item.score !== null && item.score < .9).sort((a,b)=>(b.details?.overallSavingsMs||0)-(a.details?.overallSavingsMs||0)).slice(0,10).map((item)=>({ id:item.id, title:item.title, description:item.description, savingsMs:Math.round(item.details?.overallSavingsMs||0), savingsBytes:item.details?.overallSavingsBytes||0 }));
+    const result = {
+      configured: true,
+      engine: "Lighthouse (self-hosted)",
+      scores: Object.fromEntries(Object.entries(categories).map(([name, item]) => [name, Math.round((item.score || 0) * 100)])),
+      metrics: { lcp: audits["largest-contentful-paint"]?.displayValue, cls: audits["cumulative-layout-shift"]?.displayValue, inp: audits["interaction-to-next-paint"]?.displayValue || audits["total-blocking-time"]?.displayValue, fcp: audits["first-contentful-paint"]?.displayValue, speedIndex: audits["speed-index"]?.displayValue, ttfb: audits["server-response-time"]?.displayValue },
+      opportunities,
+      fetchedAt: new Date().toISOString(),
+    };
+    pageSpeedCache.set(key, { expiresAt: Date.now() + 30 * 60 * 1000, data: result });
+    return result;
+  } catch (error) {
+    throw new Error(`Local Lighthouse audit failed: ${error.message}. Install Chrome on the API server or set LIGHTHOUSE_CHROME_PATH.`);
+  } finally {
+    if (chrome) await chrome.kill().catch(() => {});
+  }
 }
 
 exports.collectAnalytics = catchAsync(async (req, res) => {
@@ -46,7 +61,7 @@ exports.collectAnalytics = catchAsync(async (req, res) => {
 });
 
 exports.getDashboardAnalytics = catchAsync(async (req, res) => {
-  const analytics = await firstPartyAnalytics.report(req.query.startDate || "28daysAgo");
+  const analytics = await firstPartyAnalytics.report({ startDate: req.query.startDate, endDate: req.query.endDate });
   return successResponse(res, "Analytics retrieved", 200, { analytics });
 });
 

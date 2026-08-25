@@ -4,7 +4,6 @@ const jwt = require("jsonwebtoken");
 const catchAsync = require("../middleware/asyncHandler");
 const prisma = require("../config/database");
 const { createUser, getUser } = require("../repositories/userRepository");
-const Loggers = require("../utils/Logger");
 
 const signEmail = async (id) => {
   const token = jwt.sign({ id }, process.env.JWT_SECRET_KEY, {
@@ -52,7 +51,7 @@ exports.login = catchAsync(async (req, res) => {
       return errorResponse(res, "All fields are required", 400);
     }
     const user = await getUser({ email });
-    if (!user) {
+    if (!user || !user.isActive) {
       return errorResponse(res, "Invalid email or password", 401);
     }
     const isMatch = await bcrypt.compare(password, user.password);
@@ -60,12 +59,14 @@ exports.login = catchAsync(async (req, res) => {
       return errorResponse(res, "Invalid credentials", 401);
     }
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email },
+      { id: user.id },
       process.env.JWT_SECRET_KEY,
       { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
     );
     return successResponse(res, "Login successful", 200, {
       email: user.email,
+      role: user.role,
+      permissions: user.permissions,
       token: token,
     });
   } catch (error) {
@@ -76,26 +77,8 @@ exports.login = catchAsync(async (req, res) => {
 
 exports.GetUser = catchAsync(async (req, res) => {
   try {
-    const email = req.user.email;
-
-    if (!email) {
-      Loggers.error("Invalid User");
-      return errorResponse(res, "Invalid User", 401);
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      }
-    });
-    if (!user) {
-      Loggers.error("Invalid User");
-      return errorResponse(res, "Invalid User", 401);
-    }
-    return successResponse(res, "User Get successfully!", 201, {
+    const user = req.user;
+    return successResponse(res, "User retrieved successfully", 200, {
       user,
     });
   } catch (error) {

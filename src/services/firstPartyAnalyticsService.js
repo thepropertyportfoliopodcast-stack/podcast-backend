@@ -45,16 +45,30 @@ async function collect(payload, req) {
   return { accepted: true };
 }
 
-function rangeStart(range) {
-  const days = range === "7daysAgo" ? 7 : range === "90daysAgo" ? 90 : 28;
-  return new Date(Date.now() - days * 86400000);
+const dateKey = (date) => date.toISOString().slice(0, 10);
+
+function parseDate(value, endOfDay = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return null;
+  const parsed = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+  return Number.isNaN(parsed.getTime()) || dateKey(parsed) !== value ? null : parsed;
 }
 
-async function report(range = "28daysAgo") {
-  const start = rangeStart(range);
+async function report(requestedRange = {}) {
+  const today = dateKey(new Date());
+  const availability = await prisma.analyticsEvent.aggregate({ _min: { createdAt: true } });
+  const minDate = availability._min.createdAt ? dateKey(availability._min.createdAt) : today;
+  const requestedStart = parseDate(requestedRange.startDate) || parseDate(today);
+  const requestedEnd = parseDate(requestedRange.endDate, true) || parseDate(today, true);
+  const start = requestedStart < parseDate(minDate) ? parseDate(minDate) : requestedStart;
+  const end = requestedEnd > parseDate(today, true) ? parseDate(today, true) : requestedEnd;
+  if (start > end) {
+    const error = new Error(`Analytics dates must be between ${minDate} and ${today}`);
+    error.statusCode = 400;
+    throw error;
+  }
   const [events, sessions, realtime] = await Promise.all([
-    prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start } }, select: { name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
-    prisma.analyticsSession.findMany({ where: { lastSeenAt: { gte: start } }, select: { id: true, visitorId: true, landingPage: true, referrer: true, source: true, medium: true, campaign: true, deviceType: true, browser: true, operatingSystem: true, country: true, firstSeenAt: true, lastSeenAt: true } }),
+    prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start, lte: end } }, select: { name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
+    prisma.analyticsSession.findMany({ where: { firstSeenAt: { lte: end }, lastSeenAt: { gte: start } }, select: { id: true, visitorId: true, landingPage: true, referrer: true, source: true, medium: true, campaign: true, deviceType: true, browser: true, operatingSystem: true, country: true, firstSeenAt: true, lastSeenAt: true } }),
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 60000) }, name: "page_view" }, select: { sessionId: true, path: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
   ]);
   const pageViews = events.filter((event) => event.name === "page_view");
@@ -68,6 +82,10 @@ async function report(range = "28daysAgo") {
   engagement.forEach((event) => { const path = event.path.split("?")[0]; if (pageMap[path]) pageMap[path].engagementSeconds += event.value || 0; });
   const pages = Object.values(pageMap).map((row)=>({ ...row, visitors: row.visitors.size, sessions: row.sessions.size, averageEngagement: row.sessions.size ? row.engagementSeconds / row.sessions.size : 0 })).sort((a,b)=>b.views-a.views);
   const trendMap = {};
+  for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const day = dateKey(cursor);
+    trendMap[day] = { date: day, views: 0, visitors: new Set(), sessions: new Set() };
+  }
   pageViews.forEach((event)=>{ const day = event.createdAt.toISOString().slice(0,10); const row = trendMap[day] ||= { date: day, views: 0, visitors: new Set(), sessions: new Set() }; row.views++; row.visitors.add(event.visitorId); row.sessions.add(event.sessionId); });
   const vitals = {};
   events.filter((event)=>event.name === "web_vital").forEach((event)=>{ const metric = event.metadata?.metric; if (metric) (vitals[metric] ||= []).push(event.value || 0); });
@@ -122,6 +140,8 @@ async function report(range = "28daysAgo") {
   const platformConversions = [...conversionMap.values()].map((row) => ({ ...row, visitors: row.visitors.size })).sort((a, b) => b.clicks - a.clicks);
   const bounced = sessions.filter((session)=>viewsBySession[session.id] === 1 && !(engagedBySession[session.id] >= 10)).length;
   return {
+    range: { startDate: dateKey(start), endDate: dateKey(end) },
+    availableRange: { minDate, maxDate: today },
     summary: { visitors: unique(pageViews.map((e)=>e.visitorId)), sessions: unique(pageViews.map((e)=>e.sessionId)), pageViews: pageViews.length, pagesPerSession: pageViews.length / Math.max(unique(pageViews.map((e)=>e.sessionId)),1), averageEngagement: Object.values(engagedBySession).reduce((a,b)=>a+b,0)/Math.max(Object.keys(engagedBySession).length,1), bounceRate: sessions.length ? bounced/sessions.length : 0, events: events.length },
     realtime: { visitors: unique(realtime.map((e)=>e.sessionId)), pages: countBy(realtime, (e)=>e.path).slice(0,10) },
     trend: Object.values(trendMap).map((row)=>({ date: row.date, views: row.views, visitors: row.visitors.size, sessions: row.sessions.size })),

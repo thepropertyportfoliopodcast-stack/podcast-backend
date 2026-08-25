@@ -7,11 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
 model User {
-  id       Int    @id @default(autoincrement())
-  name     String
-  email    String @unique
-  password String
+  id          Int      @id @default(autoincrement())
+  name        String
+  email       String   @unique
+  password    String
+  role        UserRole @default(ADMIN)
+  permissions String[] @default([])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Podcast {
@@ -72,6 +82,7 @@ model Episode {
   audio               String?
   audioSize           BigInt?
   audioStatus         String               @default("PENDING")
+  heroPhones          HeroPhone[]
   DistributionStatus  DistributionStatus[]
   podcast             Podcast              @relation(fields: [podcastId], references: [id])
 }
@@ -113,10 +124,13 @@ model HeroPhone {
   youtubeVideoUrl String
   displayOrder    Int      @default(0)
   isActive        Boolean  @default(true)
+  episodeId       Int?
+  episode         Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([isActive, displayOrder], map: "HeroPhone_active_order_idx")
+  @@index([episodeId, isActive], map: "HeroPhone_episode_active_idx")
 }
 
 model Guide {
@@ -194,20 +208,23 @@ model AnalyticsSession {
 }
 
 model AnalyticsEvent {
-  id        Int              @id @default(autoincrement())
-  eventId   String           @unique
-  sessionId String
-  visitorId String
-  name      String
-  path      String
-  title     String?
-  value     Float?
-  metadata  Json?
-  createdAt DateTime         @default(now())
-  session   AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id         Int              @id @default(autoincrement())
+  eventId    String           @unique
+  sessionId  String
+  visitorId  String
+  name       String
+  path       String
+  title      String?
+  value      Float?
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+  isResolved Boolean          @default(false)
+  resolvedAt DateTime?
+  session    AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
   @@index([name, createdAt])
+  @@index([name, isResolved, createdAt])
   @@index([path, createdAt])
   @@index([sessionId, createdAt])
   @@index([visitorId, createdAt])
