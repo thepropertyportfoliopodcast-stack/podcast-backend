@@ -77,7 +77,9 @@ async function runLighthouse(url, strategy) {
       fetchedAt: new Date().toISOString(),
     };
   } finally {
-    if (chrome) await chrome.kill().catch(() => {});
+    if (chrome) {
+      try { await chrome.kill(); } catch (_) {}
+    }
   }
 }
 
