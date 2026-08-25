@@ -32,7 +32,10 @@ app.use(express.urlencoded({ extended: true, limit: "2000mb" }));
 const { collectAnalytics } = require("./controllers/analyticsController");
 app.post("/api/analytics/collect", collectAnalytics);
 
-const PORT = process.env.REACT_APP_SERVER_DOMAIN || 5000;
+const configuredPort = Number.parseInt(process.env.PORT || "", 10);
+const PORT = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535
+  ? configuredPort
+  : 5000;
 
 app.use("/api", require("./routes/userRoutes"));
 app.use("/", require("./routes/rssRoutes"));
