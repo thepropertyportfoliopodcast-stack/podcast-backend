@@ -1,9 +1,9 @@
 module.exports = {
   apps: [
     {
-      name: 'Podcast_backend',
+      name: 'podcast-backend',
       script: './src/app.js',
-      cwd: '/home/ubuntu/Podcast_backend',
+      cwd: __dirname,
       env: {
         NODE_ENV: 'production',
       },

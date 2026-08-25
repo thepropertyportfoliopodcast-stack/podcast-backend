@@ -5,18 +5,19 @@ const { ADMIN_PERMISSIONS } = require("../config/adminPermissions");
 const { upload } = require("../services/storageService");
 const { listHosts, getHost, createHost, updateHost } = require("../controllers/hostController");
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
-const { getDashboardAnalytics, getPageSpeedTargets, getPageSpeedAudit, getWebsiteHealth } = require("../controllers/analyticsController");
-const { listAdmins, createAdmin, updateAdmin } = require("../controllers/adminUserController");
+const { getDashboardAnalytics, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth } = require("../controllers/analyticsController");
+const { listAdmins, createAdmin, updateAdmin, deleteAdmin } = require("../controllers/adminUserController");
 
 const access = (permission) => [verifyToken, requirePermission(permission)];
 
 router.get("/admin/users", verifyToken, requireSuperAdmin, listAdmins);
 router.post("/admin/users", verifyToken, requireSuperAdmin, createAdmin);
 router.patch("/admin/users/:id", verifyToken, requireSuperAdmin, updateAdmin);
+router.delete("/admin/users/:id", verifyToken, requireSuperAdmin, deleteAdmin);
 
 router.get("/admin/analytics", ...access(ADMIN_PERMISSIONS.ANALYTICS), getDashboardAnalytics);
-router.get("/admin/analytics/pagespeed/pages", ...access(ADMIN_PERMISSIONS.ANALYTICS), getPageSpeedTargets);
-router.get("/admin/analytics/pagespeed", ...access(ADMIN_PERMISSIONS.ANALYTICS), getPageSpeedAudit);
+router.get("/admin/analytics/lighthouse/pages", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseTargets);
+router.get("/admin/analytics/lighthouse", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseAudit);
 router.get("/admin/analytics/health", ...access(ADMIN_PERMISSIONS.ANALYTICS), getWebsiteHealth);
 
 router.get("/admin/hero-phone/get", ...access(ADMIN_PERMISSIONS.PODCASTS), listAdminHeroPhones);

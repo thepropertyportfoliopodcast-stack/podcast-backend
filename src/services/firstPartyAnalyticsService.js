@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const prisma = require("../config/database");
+const { buildPublicPages } = require("./publicPageCatalogService");
 
 const allowedEvents = new Set(["page_view", "engagement", "scroll_depth", "outbound_click", "web_vital", "media_play", "form_submit", "browser_error", "resource_error"]);
 const clean = (value, max = 500) => typeof value === "string" ? value.trim().slice(0, max) : null;
@@ -66,11 +67,15 @@ async function report(requestedRange = {}) {
     error.statusCode = 400;
     throw error;
   }
-  const [events, sessions, realtime] = await Promise.all([
+  const [events, sessions, realtime, publicPages] = await Promise.all([
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start, lte: end } }, select: { name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
     prisma.analyticsSession.findMany({ where: { firstSeenAt: { lte: end }, lastSeenAt: { gte: start } }, select: { id: true, visitorId: true, landingPage: true, referrer: true, source: true, medium: true, campaign: true, deviceType: true, browser: true, operatingSystem: true, country: true, firstSeenAt: true, lastSeenAt: true } }),
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 60000) }, name: "page_view" }, select: { sessionId: true, path: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
+    buildPublicPages(),
   ]);
+  const cleanPath = (value = "") => value.split("?")[0] || "/";
+  const seoTitleByPath = new Map(publicPages.map((page) => [page.path, page.seoTitle]));
+  const pageTitle = (path, fallback) => seoTitleByPath.get(cleanPath(path)) || fallback || cleanPath(path);
   const pageViews = events.filter((event) => event.name === "page_view");
   const engagement = events.filter((event) => event.name === "engagement");
   const unique = (items) => new Set(items).size;
@@ -78,7 +83,7 @@ async function report(requestedRange = {}) {
   const engagedBySession = engagement.reduce((acc, event) => { acc[event.sessionId] = (acc[event.sessionId] || 0) + (event.value || 0); return acc; }, {});
   const viewsBySession = pageViews.reduce((acc, event) => { acc[event.sessionId] = (acc[event.sessionId] || 0) + 1; return acc; }, {});
   const pageMap = {};
-  pageViews.forEach((event) => { const path = event.path.split("?")[0]; const row = pageMap[path] ||= { path, title: event.title, views: 0, visitors: new Set(), sessions: new Set(), engagementSeconds: 0 }; row.views++; row.visitors.add(event.visitorId); row.sessions.add(event.sessionId); });
+  pageViews.forEach((event) => { const path = cleanPath(event.path); const row = pageMap[path] ||= { path, title: pageTitle(path, event.title), views: 0, visitors: new Set(), sessions: new Set(), engagementSeconds: 0 }; row.views++; row.visitors.add(event.visitorId); row.sessions.add(event.sessionId); });
   engagement.forEach((event) => { const path = event.path.split("?")[0]; if (pageMap[path]) pageMap[path].engagementSeconds += event.value || 0; });
   const pages = Object.values(pageMap).map((row)=>({ ...row, visitors: row.visitors.size, sessions: row.sessions.size, averageEngagement: row.sessions.size ? row.engagementSeconds / row.sessions.size : 0 })).sort((a,b)=>b.views-a.views);
   const trendMap = {};
@@ -93,7 +98,6 @@ async function report(requestedRange = {}) {
   const errorEvents = events.filter((event)=>event.name === "browser_error" || event.name === "resource_error");
   const platform = (pattern) => outbound.filter((event)=>pattern.test(event.metadata?.url || "")).length;
   const sessionMap = new Map(sessions.map((session) => [session.id, session]));
-  const cleanPath = (value = "") => value.split("?")[0] || "/";
   const sessionSource = (session) => session?.source || (session?.referrer ? (() => { try { return new URL(session.referrer).hostname; } catch { return "Referral"; } })() : "Direct");
   const attributionMap = new Map();
   const attributionKey = (source, medium, campaign, path) => `${source}\u0000${medium}\u0000${campaign}\u0000${path}`;
@@ -104,7 +108,7 @@ async function report(requestedRange = {}) {
     const medium = session?.medium || "—";
     const campaign = session?.campaign || "—";
     const key = attributionKey(source, medium, campaign, path);
-    const row = attributionMap.get(key) || { source, medium, campaign, path, title: event.title, pageViews: 0, visitors: new Set(), sessions: new Set(), totalEngagementSeconds: 0 };
+    const row = attributionMap.get(key) || { source, medium, campaign, path, title: pageTitle(path, event.title), pageViews: 0, visitors: new Set(), sessions: new Set(), totalEngagementSeconds: 0 };
     row.pageViews += 1;
     row.visitors.add(event.visitorId);
     row.sessions.add(event.sessionId);
@@ -132,7 +136,7 @@ async function report(requestedRange = {}) {
     const path = cleanPath(event.path);
     const source = sessionSource(session);
     const key = `${platformName}\u0000${path}\u0000${source}`;
-    const row = conversionMap.get(key) || { platform: platformName, path, source, clicks: 0, visitors: new Set(), destination };
+    const row = conversionMap.get(key) || { platform: platformName, path, title: pageTitle(path, event.title), source, clicks: 0, visitors: new Set(), destination };
     row.clicks += 1;
     row.visitors.add(event.visitorId);
     conversionMap.set(key, row);
@@ -143,7 +147,7 @@ async function report(requestedRange = {}) {
     range: { startDate: dateKey(start), endDate: dateKey(end) },
     availableRange: { minDate, maxDate: today },
     summary: { visitors: unique(pageViews.map((e)=>e.visitorId)), sessions: unique(pageViews.map((e)=>e.sessionId)), pageViews: pageViews.length, pagesPerSession: pageViews.length / Math.max(unique(pageViews.map((e)=>e.sessionId)),1), averageEngagement: Object.values(engagedBySession).reduce((a,b)=>a+b,0)/Math.max(Object.keys(engagedBySession).length,1), bounceRate: sessions.length ? bounced/sessions.length : 0, events: events.length },
-    realtime: { visitors: unique(realtime.map((e)=>e.sessionId)), pages: countBy(realtime, (e)=>e.path).slice(0,10) },
+    realtime: { visitors: unique(realtime.map((e)=>e.sessionId)), pages: countBy(realtime, (e)=>pageTitle(e.path)).slice(0,10) },
     trend: Object.values(trendMap).map((row)=>({ date: row.date, views: row.views, visitors: row.visitors.size, sessions: row.sessions.size })),
     pages, sources: countBy(sessions, (s)=>s.source || (s.referrer ? new URL(s.referrer, "https://direct.local").hostname : "Direct" )).slice(0,12), referrers: countBy(sessions.filter((s)=>s.referrer), (s)=>{ try{return new URL(s.referrer).hostname}catch{return "Other"} }).slice(0,12), campaigns: countBy(sessions.filter((s)=>s.campaign), (s)=>s.campaign).slice(0,12), devices: countBy(sessions, (s)=>s.deviceType), browsers: countBy(sessions, (s)=>s.browser), operatingSystems: countBy(sessions, (s)=>s.operatingSystem), countries: countBy(sessions, (s)=>s.country).slice(0,12),
     platforms: { youtube: platform(/youtube|youtu\.be/i), spotify: platform(/spotify/i), apple: platform(/podcasts\.apple|apple\.com/i) },
@@ -153,10 +157,11 @@ async function report(requestedRange = {}) {
     webVitals: Object.fromEntries(Object.entries(vitals).map(([name,values])=>[name,{ p75: percentile(values), samples: values.length }])),
     errors: {
       total: errorEvents.length,
-      pages: countBy(errorEvents, (event)=>event.path).slice(0,25),
+      pages: countBy(errorEvents, (event)=>pageTitle(event.path)).slice(0,25),
       recent: errorEvents.slice(-50).reverse().map((event)=>({
         type: event.name,
         path: event.path,
+        title: pageTitle(event.path, event.title),
         message: clean(event.metadata?.message || event.metadata?.source || "Unknown browser error", 500),
         source: clean(event.metadata?.source, 500),
         line: event.metadata?.line || null,

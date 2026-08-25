@@ -1,44 +1,74 @@
 const catchAsync = require("../middleware/asyncHandler");
-const { successResponse } = require("../utils/httpResponses");
-const prisma = require("../config/database");
+const fs = require("fs");
+const { successResponse, errorResponse } = require("../utils/httpResponses");
 const firstPartyAnalytics = require("../services/firstPartyAnalyticsService");
+const { buildPublicPages } = require("../services/publicPageCatalogService");
 
-const pageSpeedCache = new Map();
+const lighthouseCache = new Map();
 const healthCache = new Map();
+let lighthouseQueue = Promise.resolve();
 
-async function buildPublicPages() {
-  const site = (process.env.WEBSITE_URL || "https://thepropertyportfolio.com.au").replace(/\/$/, "");
-  const [episodes, hosts] = await Promise.all([
-    prisma.episode.findMany({ where: { isDeleted: false }, select: { slug: true, title: true }, orderBy: { createdAt: "desc" } }),
-    prisma.host.findMany({ where: { isActive: true }, select: { slug: true, name: true }, orderBy: { displayOrder: "asc" } }),
-  ]);
-  const staticPages = [["Home","/"],["Episodes","/episode"],["About","/about"],["Contact","/contact"],["Terms of Access","/access"],["Terms of Use","/use"],["Privacy Policy","/privacy"]];
-  return [...staticPages.map(([label,path])=>({ label, path, url: `${site}${path === "/" ? "" : path}`, type: "page" })), ...episodes.map((episode)=>({ label: episode.title, path: `/episode/${episode.slug}`, url: `${site}/episode/${episode.slug}`, type: "episode" })), ...hosts.map((host)=>({ label: host.name, path: `/host/${host.slug}`, url: `${site}/host/${host.slug}`, type: "host" }))];
+const STANDARD_CHROME_PATHS = [
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+  "/snap/bin/chromium",
+];
+
+function resolveChromePath(chromeLauncher) {
+  const configuredPath = process.env.LIGHTHOUSE_CHROME_PATH || process.env.CHROME_PATH;
+  if (configuredPath) {
+    if (!fs.existsSync(configuredPath)) {
+      throw new Error(`Configured Chrome executable does not exist: ${configuredPath}`);
+    }
+    return configuredPath;
+  }
+
+  const standardPath = STANDARD_CHROME_PATHS.find((candidate) => fs.existsSync(candidate));
+  if (standardPath) return standardPath;
+
+  try {
+    const detectedPath = chromeLauncher.getChromePath();
+    if (detectedPath && fs.existsSync(detectedPath)) return detectedPath;
+  } catch (_) {
+    // The actionable error below is returned to the dashboard.
+  }
+
+  throw new Error("Chrome/Chromium was not found on the API server. Install chromium and set LIGHTHOUSE_CHROME_PATH to its executable path");
 }
 
-async function getPageSpeed(url, strategy) {
-  const key = `${url}:${strategy}`;
-  const cached = pageSpeedCache.get(key);
-  if (cached?.expiresAt > Date.now()) return { ...cached.data, cached: true };
+function enqueueLighthouse(task) {
+  const queued = lighthouseQueue.then(task, task);
+  lighthouseQueue = queued.catch(() => {});
+  return queued;
+}
+
+async function runLighthouse(url, strategy) {
   let chrome;
   try {
     const [{ default: lighthouse }, chromeLauncher] = await Promise.all([import("lighthouse"), import("chrome-launcher")]);
+    const chromePath = resolveChromePath(chromeLauncher);
     chrome = await chromeLauncher.launch({
-      chromePath: process.env.LIGHTHOUSE_CHROME_PATH || undefined,
-      chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+      chromePath,
+      chromeFlags: ["--headless=new", "--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
     });
     const flags = {
       port: chrome.port,
       output: "json",
       logLevel: "error",
       onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
-      ...(strategy === "desktop" ? { preset: "desktop" } : {}),
     };
-    const run = await lighthouse(url, flags);
-    const categories = run?.lhr?.categories || {};
-    const audits = run?.lhr?.audits || {};
+    const desktopConfig = strategy === "desktop"
+      ? (await import("lighthouse/core/config/desktop-config.js")).default
+      : undefined;
+    const run = await lighthouse(url, flags, desktopConfig);
+    if (!run?.lhr) throw new Error("Lighthouse completed without returning an audit report");
+
+    const categories = run.lhr.categories || {};
+    const audits = run.lhr.audits || {};
     const opportunities = Object.values(audits).filter((item) => item.details?.type === "opportunity" && item.score !== null && item.score < .9).sort((a,b)=>(b.details?.overallSavingsMs||0)-(a.details?.overallSavingsMs||0)).slice(0,10).map((item)=>({ id:item.id, title:item.title, description:item.description, savingsMs:Math.round(item.details?.overallSavingsMs||0), savingsBytes:item.details?.overallSavingsBytes||0 }));
-    const result = {
+    return {
       configured: true,
       engine: "Lighthouse (self-hosted)",
       scores: Object.fromEntries(Object.entries(categories).map(([name, item]) => [name, Math.round((item.score || 0) * 100)])),
@@ -46,13 +76,22 @@ async function getPageSpeed(url, strategy) {
       opportunities,
       fetchedAt: new Date().toISOString(),
     };
-    pageSpeedCache.set(key, { expiresAt: Date.now() + 30 * 60 * 1000, data: result });
-    return result;
-  } catch (error) {
-    throw new Error(`Local Lighthouse audit failed: ${error.message}. Install Chrome on the API server or set LIGHTHOUSE_CHROME_PATH.`);
   } finally {
     if (chrome) await chrome.kill().catch(() => {});
   }
+}
+
+async function getLighthouse(url, strategy) {
+  const key = `${url}:${strategy}`;
+  const cached = lighthouseCache.get(key);
+  if (cached?.expiresAt > Date.now()) return { ...cached.data, cached: true };
+  return enqueueLighthouse(async () => {
+    const queuedCache = lighthouseCache.get(key);
+    if (queuedCache?.expiresAt > Date.now()) return { ...queuedCache.data, cached: true };
+    const result = await runLighthouse(url, strategy);
+    lighthouseCache.set(key, { expiresAt: Date.now() + 30 * 60 * 1000, data: result });
+    return result;
+  });
 }
 
 exports.collectAnalytics = catchAsync(async (req, res) => {
@@ -65,12 +104,19 @@ exports.getDashboardAnalytics = catchAsync(async (req, res) => {
   return successResponse(res, "Analytics retrieved", 200, { analytics });
 });
 
-exports.getPageSpeedTargets = catchAsync(async (req, res) => {
+exports.getLighthouseTargets = catchAsync(async (req, res) => {
   const pages = await buildPublicPages();
-  return successResponse(res, "PageSpeed pages retrieved", 200, { pages });
+  let runtime;
+  try {
+    const chromeLauncher = await import("chrome-launcher");
+    runtime = { ready: true, chromePath: resolveChromePath(chromeLauncher), engine: "Lighthouse (self-hosted)" };
+  } catch (error) {
+    runtime = { ready: false, error: error.message, engine: "Lighthouse (self-hosted)" };
+  }
+  return successResponse(res, "Lighthouse pages retrieved", 200, { pages, runtime });
 });
 
-exports.getPageSpeedAudit = catchAsync(async (req, res) => {
+exports.getLighthouseAudit = catchAsync(async (req, res) => {
   const strategy = req.query.strategy === "desktop" ? "desktop" : "mobile";
   const site = process.env.WEBSITE_URL || "https://thepropertyportfolio.com.au";
   const requestedUrl = req.query.url || site;
@@ -78,8 +124,13 @@ exports.getPageSpeedAudit = catchAsync(async (req, res) => {
   let website;
   try { requested = new URL(requestedUrl); website = new URL(site); } catch { return res.status(400).json({ status: false, message: "Invalid audit URL" }); }
   if (requested.origin !== website.origin) return res.status(400).json({ status: false, message: "Only website pages can be audited" });
-  const pageSpeed = await getPageSpeed(requestedUrl, strategy);
-  return successResponse(res, "PageSpeed audit retrieved", 200, { pageSpeed, strategy, url: requestedUrl });
+  try {
+    const lighthouse = await getLighthouse(requestedUrl, strategy);
+    return successResponse(res, "Lighthouse audit retrieved", 200, { lighthouse, strategy, url: requestedUrl });
+  } catch (error) {
+    console.error("Self-hosted Lighthouse audit failed", { url: requestedUrl, strategy, error: error.message });
+    return errorResponse(res, `Self-hosted Lighthouse audit failed: ${error.message}`, 500);
+  }
 });
 
 exports.getWebsiteHealth = catchAsync(async (req, res) => {

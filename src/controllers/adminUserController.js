@@ -45,3 +45,17 @@ exports.updateAdmin = catchAsync(async (req, res) => {
   const user = await prisma.user.update({ where: { id }, data, select: publicUser });
   return successResponse(res, "Administrator updated", 200, { user });
 });
+
+exports.deleteAdmin = catchAsync(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return errorResponse(res, "Invalid administrator ID", 400);
+
+  const existing = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+  if (!existing) return errorResponse(res, "Administrator not found", 404);
+  if (existing.role === "SUPER_ADMIN") return errorResponse(res, "Super-admin accounts cannot be deleted", 403);
+
+  const result = await prisma.user.deleteMany({ where: { id, role: "ADMIN" } });
+  if (!result.count) return errorResponse(res, "This administrator can no longer be deleted", 409);
+
+  return successResponse(res, "Administrator deleted");
+});

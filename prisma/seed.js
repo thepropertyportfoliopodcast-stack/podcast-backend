@@ -19,6 +19,7 @@ async function main() {
     update: { name, password: hashedPassword, role: "SUPER_ADMIN", permissions: [], isActive: true },
     create: { name, email, password: hashedPassword, role: "SUPER_ADMIN", permissions: [], isActive: true },
   });
+  console.log(`Super admin ${email} is ready`);
 }
 
 main()
