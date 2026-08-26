@@ -6,6 +6,19 @@ const { uploadFileToSpaces, deleteFileFromSpaces } = require("../services/storag
 
 const slugify = (value = "") => value.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+const hostEpisodeCardSelect = {
+  uuid: true,
+  slug: true,
+  title: true,
+  description: true,
+  duration: true,
+  durationInSec: true,
+  thumbnail: true,
+  createdAt: true,
+  topic: true,
+  episodeNumber: true,
+};
+
 exports.listHosts = catchAsync(async (req, res) => {
   try {
     const isAdminRequest = req.originalUrl.startsWith("/api/admin/");
@@ -23,7 +36,12 @@ exports.getHost = catchAsync(async (req, res) => {
   try {
     const host = await prisma.host.findFirst({ where: { OR: [{ slug: req.params.id }, { uuid: req.params.id }] } });
     if (!host) return errorResponse(res, "Host not found", 404);
-    const episodes = await prisma.episode.findMany({ where: { OR: [{ hostSlugs: { has: host.slug } }, { guestHostSlugs: { has: host.slug } }], isDeleted: false }, include: { podcast: true }, orderBy: { createdAt: "desc" }, take: 6 });
+    const episodes = await prisma.episode.findMany({
+      where: { OR: [{ hostSlugs: { has: host.slug } }, { guestHostSlugs: { has: host.slug } }], isDeleted: false },
+      select: hostEpisodeCardSelect,
+      orderBy: { createdAt: "desc" },
+      take: 6,
+    });
     return successResponse(res, "Host retrieved successfully", 200, { ...host, episodes });
   } catch (error) {
     return errorResponse(res, error.message || "Unable to retrieve host", 500);
