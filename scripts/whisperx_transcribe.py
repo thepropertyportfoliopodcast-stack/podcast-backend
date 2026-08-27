@@ -9,6 +9,14 @@ import sys
 from pathlib import Path
 
 
+def report_progress(percent, message):
+    """Emit a machine-readable progress event for the Node queue worker."""
+    print(
+        "WHISPERX_PROGRESS:" + json.dumps({"percent": int(percent), "message": str(message)}),
+        flush=True,
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio", required=True)
@@ -121,24 +129,30 @@ def main():
         if args.device == "cpu":
             torch.set_num_threads(max(1, args.threads))
 
+        report_progress(8, "Loading episode audio")
         audio = whisperx.load_audio(args.audio)
         duration_ms = int(round((len(audio) / 16000) * 1000))
         language = None if args.language.lower() == "auto" else args.language.lower()
+        report_progress(12, "Loading WhisperX speech model")
         model = whisperx.load_model(
             args.model,
             args.device,
             compute_type=args.compute_type,
             language=language,
         )
+        report_progress(20, "Transcribing English audio")
         result = model.transcribe(audio, batch_size=max(1, args.batch_size))
         detected_language = result.get("language") or language or "en"
+        report_progress(68, "Speech recognition complete")
 
         del model
         gc.collect()
         if args.device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        report_progress(72, "Loading word-alignment model")
         align_model, metadata = whisperx.load_align_model(language_code=detected_language, device=args.device)
+        report_progress(78, "Aligning every word to the audio")
         result = whisperx.align(
             result.get("segments") or [],
             align_model,
@@ -150,6 +164,7 @@ def main():
         result["language"] = detected_language
 
         if args.diarize:
+            report_progress(88, "Identifying speaker changes")
             if not args.hf_token:
                 raise RuntimeError("WHISPERX_HF_TOKEN is required when speaker diarization is enabled")
             from whisperx.diarize import DiarizationPipeline
@@ -162,6 +177,7 @@ def main():
             diarized = diarizer(audio, **diarize_kwargs)
             result = whisperx.assign_word_speakers(diarized, result)
 
+        report_progress(94, "Preparing transcript data")
         payload = serialise_result(result, duration_ms, args.model)
         if not payload["words"]:
             raise RuntimeError("WhisperX returned no aligned words")
@@ -171,6 +187,7 @@ def main():
         temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
         temporary_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         os.replace(temporary_path, output_path)
+        report_progress(99, "Saving completed transcript")
     except Exception as error:
         print(f"WhisperX transcription failed: {error}", file=sys.stderr)
         raise

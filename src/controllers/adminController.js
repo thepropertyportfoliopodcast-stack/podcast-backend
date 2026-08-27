@@ -422,6 +422,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       timestamps,
       youtubeUrl: youtubeUrl?.trim() || null,
       transcript: transcript || null,
+      transcriptIsManual: Boolean(transcript?.trim()),
       transcriptStatus: TRANSCRIPT_STATUS.QUEUED,
       transcriptLanguage: "en",
       transcriptSyncOffsetMs: Number.isFinite(Number.parseInt(transcriptSyncOffsetMs, 10))
@@ -563,7 +564,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (detail) updates.detail = detail;
     if (timestamps !== undefined) updates.timestamps = timestamps || null;
     if (youtubeUrl !== undefined) updates.youtubeUrl = youtubeUrl.trim() || null;
-    if (transcript !== undefined) updates.transcript = transcript || null;
+    if (transcript !== undefined) {
+      updates.transcript = transcript || null;
+      updates.transcriptIsManual = Boolean(transcript?.trim());
+    }
     if (transcriptSyncOffsetMs !== undefined) {
       const parsedOffset = Number.parseInt(transcriptSyncOffsetMs, 10);
       if (Number.isFinite(parsedOffset)) updates.transcriptSyncOffsetMs = Math.max(-300000, Math.min(300000, parsedOffset));

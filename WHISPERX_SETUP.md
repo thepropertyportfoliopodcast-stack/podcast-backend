@@ -20,7 +20,11 @@ WHISPERX_ENABLED=true
 WHISPERX_AUTO_BACKFILL=true
 WHISPERX_LANGUAGE=en
 WHISPERX_PYTHON=/root/podcast-backend/.venv-whisperx/bin/python
+WHISPERX_ESTIMATED_REALTIME_FACTOR=1.5
+WHISPERX_ESTIMATED_STARTUP_SECONDS=180
 ```
+
+The transcript dashboard reports the worker phase, percent complete, queue position and an approximate completion time. The estimate is based on episode length and can be calibrated with `WHISPERX_ESTIMATED_REALTIME_FACTOR` after observing this server.
 
 The included `small.en`, CPU and `int8` settings fit a small server better, but long podcast episodes will process slowly. For the highest accuracy, run the worker on an NVIDIA GPU and use `WHISPERX_MODEL=large-v3`, `WHISPERX_DEVICE=cuda`, and `WHISPERX_COMPUTE_TYPE=float16`.
 

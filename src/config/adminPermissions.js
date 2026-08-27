@@ -2,6 +2,7 @@ const ADMIN_PERMISSIONS = Object.freeze({
   DASHBOARD: "dashboard",
   ANALYTICS: "analytics",
   PODCASTS: "podcasts",
+  TRANSCRIPTS: "transcripts",
   HOSTS: "hosts",
   ENQUIRIES: "enquiries",
   SUBSCRIBERS: "subscribers",

@@ -71,6 +71,7 @@ model Episode {
   timestamps             String?
   youtubeUrl             String?
   transcript             String?
+  transcriptIsManual     Boolean              @default(false)
   transcriptStatus       String               @default("PENDING")
   transcriptLanguage     String               @default("en")
   transcriptWords        Json?
@@ -81,6 +82,10 @@ model Episode {
   transcriptModel        String?
   transcriptDurationMs   Int?
   transcriptSyncOffsetMs Int                  @default(0)
+  transcriptProgress     Int                  @default(0)
+  transcriptProgressNote String?
+  transcriptStartedAt    DateTime?
+  transcriptEstimateSec  Int?
   topicsCovered          String[]             @default([])
   reelLinks              String[]             @default([])
   hostSlugs              String[]             @default([])

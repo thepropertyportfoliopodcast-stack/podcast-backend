@@ -7,6 +7,7 @@ const {
   cancelEpisodeTranscription,
   enqueueEpisodeTranscription,
   enqueueExistingEpisodes,
+  estimateTranscriptionSeconds,
   getTranscriptionSummary,
 } = require("../services/transcriptionService");
 
@@ -33,7 +34,7 @@ exports.listEpisodeTranscripts = catchAsync(async (req, res) => {
     ] } : {}),
   };
 
-  const [episodes, total, grouped] = await Promise.all([
+  const [episodes, total, grouped, activeQueue] = await Promise.all([
     prisma.episode.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -54,18 +55,64 @@ exports.listEpisodeTranscripts = catchAsync(async (req, res) => {
         transcriptModel: true,
         transcriptDurationMs: true,
         transcriptSyncOffsetMs: true,
+        transcriptProgress: true,
+        transcriptProgressNote: true,
+        transcriptStartedAt: true,
+        transcriptEstimateSec: true,
+        durationInSec: true,
         createdAt: true,
       },
     }),
     prisma.episode.count({ where }),
     prisma.episode.groupBy({ by: ["transcriptStatus"], where: { isDeleted: false }, _count: { _all: true } }),
+    prisma.episode.findMany({
+      where: { isDeleted: false, transcriptStatus: { in: [STATUS.PROCESSING, STATUS.QUEUED] } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        uuid: true,
+        transcriptStatus: true,
+        transcriptProgress: true,
+        transcriptStartedAt: true,
+        transcriptEstimateSec: true,
+        transcriptDurationMs: true,
+        durationInSec: true,
+      },
+    }),
   ]);
 
   const summary = Object.fromEntries(ALL_STATUSES.map((status) => [status, 0]));
   grouped.forEach((row) => { summary[row.transcriptStatus] = row._count._all; });
+  const now = Date.now();
+  const queueMetadata = new Map();
+  const processing = activeQueue.filter((episode) => episode.transcriptStatus === STATUS.PROCESSING);
+  let estimatedWaitSeconds = processing.reduce((total, episode) => {
+    const configuredEstimate = episode.transcriptEstimateSec || estimateTranscriptionSeconds(episode);
+    const elapsed = episode.transcriptStartedAt ? Math.max(0, (now - new Date(episode.transcriptStartedAt).getTime()) / 1000) : 0;
+    const progress = Math.max(1, Math.min(99, Number(episode.transcriptProgress) || 1));
+    const progressEstimate = elapsed > 30 ? elapsed * (100 / progress) : 0;
+    const totalEstimate = Math.max(configuredEstimate, progressEstimate);
+    const remainingSeconds = Math.max(30, totalEstimate * ((100 - progress) / 100));
+    queueMetadata.set(episode.uuid, {
+      estimatedRemainingSeconds: Math.ceil(remainingSeconds),
+      estimatedCompletionAt: new Date(now + (remainingSeconds * 1000)),
+    });
+    return total + remainingSeconds;
+  }, 0);
+  activeQueue.filter((episode) => episode.transcriptStatus === STATUS.QUEUED).forEach((episode, index) => {
+    const ownEstimate = episode.transcriptEstimateSec || estimateTranscriptionSeconds(episode);
+    queueMetadata.set(episode.uuid, {
+      queuePosition: index + 1,
+      estimatedWaitSeconds: Math.ceil(estimatedWaitSeconds),
+      estimatedRemainingSeconds: Math.ceil(estimatedWaitSeconds + ownEstimate),
+      estimatedCompletionAt: new Date(now + ((estimatedWaitSeconds + ownEstimate) * 1000)),
+    });
+    estimatedWaitSeconds += ownEstimate;
+  });
+
   const rows = episodes.map(({ transcriptWords, ...episode }) => ({
     ...episode,
     wordCount: Array.isArray(transcriptWords) ? transcriptWords.length : 0,
+    ...(workerEnabled() ? queueMetadata.get(episode.uuid) : {}),
   }));
 
   return successResponse(res, "Transcripts retrieved", 200, {
@@ -107,7 +154,7 @@ exports.deleteEpisodeTranscript = catchAsync(async (req, res) => {
   await prisma.episode.update({
     where: { id: episode.id },
     data: {
-      transcript: episode.transcriptGeneratedAt ? null : episode.transcript,
+      transcript: episode.transcriptIsManual ? episode.transcript : null,
       transcriptStatus: STATUS.DELETED,
       transcriptWords: Prisma.DbNull,
       transcriptSegments: Prisma.DbNull,
@@ -116,6 +163,10 @@ exports.deleteEpisodeTranscript = catchAsync(async (req, res) => {
       transcriptSourceAudio: null,
       transcriptModel: null,
       transcriptDurationMs: null,
+      transcriptProgress: 0,
+      transcriptProgressNote: "Generated transcript data deleted",
+      transcriptStartedAt: null,
+      transcriptEstimateSec: null,
     },
   });
   return successResponse(res, "Generated transcript data deleted. Episode audio was kept.", 200, { status: STATUS.DELETED });
