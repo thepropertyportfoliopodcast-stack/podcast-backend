@@ -8,12 +8,12 @@ const { removeEpisodeNumberFromSlug } = require("../utils/slug");
 const episodeCardSelect = {
   uuid: true, slug: true, title: true, description: true,
   duration: true, durationInSec: true, youtubeUrl: true,
-  thumbnail: true, homepageThumbnail: true, createdAt: true, topic: true,
+  thumbnail: true, homepageThumbnail: true, websiteThumbnail: true, createdAt: true, topic: true,
   episodeNumber: true,
 };
 
 const relatedEpisodeSelect = {
-  uuid: true, slug: true, title: true, thumbnail: true, homepageThumbnail: true,
+  uuid: true, slug: true, title: true, thumbnail: true, homepageThumbnail: true, websiteThumbnail: true,
   duration: true, durationInSec: true, topic: true, episodeNumber: true,
   podcast: { select: { uuid: true, slug: true, name: true, author: true } },
 };

@@ -32,7 +32,7 @@ const parseHeroPhones = (value) => {
   }
 };
 
-const isEpisodeArtwork = (url, episode) => !url || url === episode.thumbnail || url === episode.homepageThumbnail;
+const isEpisodeArtwork = (url, episode) => !url || url === episode.thumbnail || url === episode.homepageThumbnail || url === episode.websiteThumbnail;
 
 async function syncEpisodeHeroPhones(req, episode, enabled) {
   const existing = await prisma.heroPhone.findMany({ where: { episodeId: episode.id } });
@@ -363,11 +363,25 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     const thumbnailFile = requestFile(req, "thumbnail");
     if (thumbnailFile) {
       thumbnail = await uploadFileToSpaces(thumbnailFile);
+      if (!thumbnail) {
+        return errorResponse(res, "RSS episode artwork upload failed. Check the configured image storage.", 502);
+      }
     }
     let homepageThumbnail = null;
     const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
     if (homepageThumbnailFile) {
       homepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
+      if (!homepageThumbnail) {
+        return errorResponse(res, "Homepage hero image upload failed. Check the configured image storage.", 502);
+      }
+    }
+    let websiteThumbnail = null;
+    const websiteThumbnailFile = requestFile(req, "websiteThumbnail");
+    if (websiteThumbnailFile) {
+      websiteThumbnail = await uploadFileToSpaces(websiteThumbnailFile);
+      if (!websiteThumbnail) {
+        return errorResponse(res, "Website card thumbnail upload failed. Check the configured image storage.", 502);
+      }
     }
     // console.log("thumbnail", thumbnail);
 
@@ -391,6 +405,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
           : null,
       thumbnail,
       homepageThumbnail,
+      websiteThumbnail,
       link: link || null,
       audio,
       audioStatus: audio ? "COMPLETED" : "PENDING",
@@ -522,6 +537,9 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     }
 
     const updates = {};
+    let previousRssThumbnail = null;
+    let previousHomepageThumbnail = null;
+    let previousWebsiteThumbnail = null;
 
     if (title) updates.title = title;
     if (description) updates.description = description;
@@ -557,24 +575,32 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     // Handle thumbnail update only if new file comes
     const thumbnailFile = requestFile(req, "thumbnail");
     if (thumbnailFile) {
-      const isThumbDeleted = await deleteFileFromSpaces(existingEpisode.thumbnail);
-      if (!isThumbDeleted) {
-        console.warn("Failed to delete old thumbnail");
-      }
-
       const newThumbUrl = await uploadFileToSpaces(thumbnailFile);
+      if (!newThumbUrl) {
+        return errorResponse(res, "RSS episode artwork upload failed. The existing image was kept.", 502);
+      }
       updates.thumbnail = newThumbUrl;
+      previousRssThumbnail = existingEpisode.thumbnail;
     }
 
     const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
     if (homepageThumbnailFile) {
-      if (existingEpisode.homepageThumbnail) {
-        const isHomepageThumbDeleted = await deleteFileFromSpaces(existingEpisode.homepageThumbnail);
-        if (!isHomepageThumbDeleted) {
-          console.warn("Failed to delete old homepage thumbnail");
-        }
+      const newHomepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
+      if (!newHomepageThumbnail) {
+        return errorResponse(res, "Homepage hero image upload failed. The existing image was kept.", 502);
       }
-      updates.homepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
+      updates.homepageThumbnail = newHomepageThumbnail;
+      previousHomepageThumbnail = existingEpisode.homepageThumbnail;
+    }
+
+    const websiteThumbnailFile = requestFile(req, "websiteThumbnail");
+    if (websiteThumbnailFile) {
+      const newWebsiteThumbnail = await uploadFileToSpaces(websiteThumbnailFile);
+      if (!newWebsiteThumbnail) {
+        return errorResponse(res, "Website card thumbnail upload failed. The existing image was kept.", 502);
+      }
+      updates.websiteThumbnail = newWebsiteThumbnail;
+      previousWebsiteThumbnail = existingEpisode.websiteThumbnail;
     }
 
     const isValidLink =
@@ -619,6 +645,18 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       where: { uuid: id },
       data: updates,
     });
+    if (previousRssThumbnail && previousRssThumbnail !== updatedEpisode.thumbnail) {
+      const oldRssThumbnailDeleted = await deleteFileFromSpaces(previousRssThumbnail);
+      if (!oldRssThumbnailDeleted) console.warn("Failed to delete old RSS episode artwork");
+    }
+    if (previousHomepageThumbnail && previousHomepageThumbnail !== updatedEpisode.homepageThumbnail) {
+      const oldHomepageThumbnailDeleted = await deleteFileFromSpaces(previousHomepageThumbnail);
+      if (!oldHomepageThumbnailDeleted) console.warn("Failed to delete old homepage hero image");
+    }
+    if (previousWebsiteThumbnail && previousWebsiteThumbnail !== updatedEpisode.websiteThumbnail) {
+      const oldWebsiteThumbnailDeleted = await deleteFileFromSpaces(previousWebsiteThumbnail);
+      if (!oldWebsiteThumbnailDeleted) console.warn("Failed to delete old website card thumbnail");
+    }
     const heroPhones = await syncEpisodeHeroPhones(req, updatedEpisode, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true");
 
     return successResponse(res, "Episode updated successfully", 200, { ...updatedEpisode, heroPhones });
@@ -673,7 +711,7 @@ exports.PermanentDeleteEpisode = catchAsync(async (req, res) => {
       prisma.episode.delete({ where: { uuid: id } }),
     ]);
 
-    const urlsToDelete = [episode.thumbnail, episode.homepageThumbnail, episode.link, episode.audio, ...episode.heroPhones.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode))].filter(Boolean);
+    const urlsToDelete = [episode.thumbnail, episode.homepageThumbnail, episode.websiteThumbnail, episode.link, episode.audio, ...episode.heroPhones.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode))].filter(Boolean);
     const results = await Promise.allSettled(urlsToDelete.map((url) => deleteFileFromSpaces(url)));
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed) console.warn("PermanentDeleteEpisode: failed to delete some files", { failed });

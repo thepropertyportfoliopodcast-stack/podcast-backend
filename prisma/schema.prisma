@@ -59,6 +59,7 @@ model Episode {
   link                String?
   thumbnail           String
   homepageThumbnail   String?
+  websiteThumbnail    String?
   mimefield           String
   size                BigInt?
   createdAt           DateTime             @default(now())
