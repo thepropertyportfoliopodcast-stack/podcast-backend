@@ -13,7 +13,7 @@ const episodeCardSelect = {
 };
 
 const relatedEpisodeSelect = {
-  uuid: true, slug: true, title: true, thumbnail: true,
+  uuid: true, slug: true, title: true, thumbnail: true, homepageThumbnail: true,
   duration: true, durationInSec: true, topic: true, episodeNumber: true,
   podcast: { select: { uuid: true, slug: true, name: true, author: true } },
 };

@@ -14,6 +14,7 @@ const hostEpisodeCardSelect = {
   duration: true,
   durationInSec: true,
   thumbnail: true,
+  homepageThumbnail: true,
   createdAt: true,
   topic: true,
   episodeNumber: true,
