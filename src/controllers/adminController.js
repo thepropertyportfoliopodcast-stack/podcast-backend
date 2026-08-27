@@ -5,6 +5,7 @@ const { uploadFileToSpaces, deleteFileFromSpaces } = require("../services/storag
 const prisma = require("../config/database");
 const { getMediaDurationFromBuffer } = require("../services/mediaDurationService");
 const { createUniqueSlug } = require("../utils/slug");
+const { enqueueEpisodeTranscription, STATUS: TRANSCRIPT_STATUS } = require("../services/transcriptionService");
 
 const parseStringArray = (value) => {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
@@ -157,7 +158,7 @@ exports.GetAllPodcastswithFiles = catchAsync(async (req, res) => {
   try {
     const data = await prisma.podcast.findMany({
       include: {
-        episodes: true,
+        episodes: { omit: { transcriptWords: true, transcriptSegments: true } },
       },
       orderBy: {
         createdAt: "asc",
@@ -185,6 +186,7 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
       },
       include: {
         episodes: {
+          omit: { transcriptWords: true, transcriptSegments: true },
           orderBy: {
             createdAt: "asc", // Oldest first
           },
@@ -280,7 +282,6 @@ exports.DisablePodcast = catchAsync(async (req, res) => {
     // Fetch podcast and its episodes
     const podcast = await prisma.podcast.findUnique({
       where: { uuid: id },
-      include: { episodes: true },
     });
 
     if (!podcast) {
@@ -327,6 +328,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       timestamps,
       youtubeUrl,
       transcript,
+      transcriptSyncOffsetMs,
       topicsCovered,
       reelLinks,
       size,
@@ -350,10 +352,10 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ,homePageHeroPhone
     } = req.body;
 
-    if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !timestamps || !topic || !audio) {
+    if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !topic || !audio) {
       return errorResponse(
         res,
-        "Title, description, topic, podcastId, timestamps, audio and a YouTube or video link are required",
+        "Title, description, topic, podcastId, audio and a YouTube or video link are required",
         401
       );
     }
@@ -420,6 +422,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       timestamps,
       youtubeUrl: youtubeUrl?.trim() || null,
       transcript: transcript || null,
+      transcriptStatus: TRANSCRIPT_STATUS.QUEUED,
+      transcriptLanguage: "en",
+      transcriptSyncOffsetMs: Number.isFinite(Number.parseInt(transcriptSyncOffsetMs, 10))
+        ? Math.max(-300000, Math.min(300000, Number.parseInt(transcriptSyncOffsetMs, 10)))
+        : 0,
       topicsCovered: parseStringArray(topicsCovered),
       reelLinks: parseStringArray(reelLinks),
       hostSlugs: parseStringArray(hostSlugs),
@@ -432,6 +439,9 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
     const heroPhones = await syncEpisodeHeroPhones(req, newEpisode, String(homePageHeroPhone).toLowerCase() === "true");
+    await enqueueEpisodeTranscription(newEpisode.id).catch((error) => {
+      console.error(`Unable to queue transcript for episode ${newEpisode.id}:`, error);
+    });
 
     return successResponse(res, "Episode uploaded successfully", 201, { ...newEpisode, heroPhones });
   } catch (error) {
@@ -443,6 +453,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 exports.GetAllEpisodes = catchAsync(async (req, res) => {
   try {
     const data = await prisma.episode.findMany({
+      omit: { transcriptWords: true, transcriptSegments: true },
       include: {
         podcast: true,
       },
@@ -518,6 +529,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       isFeatured,
       relatedEpisodeUuids,
       homePageHeroPhone,
+      transcriptSyncOffsetMs,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -549,9 +561,13 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (primaryKeyword !== undefined) updates.primaryKeyword = primaryKeyword.trim() || null;
     if (secondaryKeywords !== undefined) updates.secondaryKeywords = secondaryKeywords.trim() || null;
     if (detail) updates.detail = detail;
-    if (timestamps) updates.timestamps = timestamps;
+    if (timestamps !== undefined) updates.timestamps = timestamps || null;
     if (youtubeUrl !== undefined) updates.youtubeUrl = youtubeUrl.trim() || null;
     if (transcript !== undefined) updates.transcript = transcript || null;
+    if (transcriptSyncOffsetMs !== undefined) {
+      const parsedOffset = Number.parseInt(transcriptSyncOffsetMs, 10);
+      if (Number.isFinite(parsedOffset)) updates.transcriptSyncOffsetMs = Math.max(-300000, Math.min(300000, parsedOffset));
+    }
     if (topicsCovered !== undefined) updates.topicsCovered = parseStringArray(topicsCovered);
     if (reelLinks !== undefined) updates.reelLinks = parseStringArray(reelLinks);
     if (hostSlugs !== undefined) updates.hostSlugs = parseStringArray(hostSlugs);
@@ -625,8 +641,9 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       audio.trim() !== "" &&
       audio.trim().toLowerCase() !== "null" &&
       audio.trim().toLowerCase() !== "undefined";
+    const audioChanged = isValidAudio && audio.trim() !== existingEpisode.audio;
 
-    if (isValidAudio && audio.trim() !== existingEpisode.audio) {
+    if (audioChanged) {
       if (existingEpisode.audio) {
         const isAudioDeleted = await deleteFileFromSpaces(existingEpisode.audio);
         if (!isAudioDeleted) {
@@ -658,6 +675,11 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       if (!oldWebsiteThumbnailDeleted) console.warn("Failed to delete old website card thumbnail");
     }
     const heroPhones = await syncEpisodeHeroPhones(req, updatedEpisode, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true");
+    if (audioChanged) {
+      await enqueueEpisodeTranscription(updatedEpisode.id, { force: true }).catch((error) => {
+        console.error(`Unable to requeue transcript for episode ${updatedEpisode.id}:`, error);
+      });
+    }
 
     return successResponse(res, "Episode updated successfully", 200, { ...updatedEpisode, heroPhones });
   } catch (error) {

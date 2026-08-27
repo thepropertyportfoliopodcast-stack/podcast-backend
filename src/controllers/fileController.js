@@ -47,7 +47,7 @@ exports.GetAllPodcastswithFiles = catchAsync(async (req, res) => {
         isDeleted: false
       },
       include: {
-        episodes: true, 
+        episodes: { omit: { transcriptWords: true, transcriptSegments: true } },
       },
       orderBy: {
         createdAt: "asc",

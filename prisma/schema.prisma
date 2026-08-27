@@ -45,47 +45,59 @@ model Podcast {
 }
 
 model Episode {
-  id                  Int                  @id @default(autoincrement())
-  uuid                String               @unique
-  slug                String               @unique
-  title               String
-  description         String
-  seoTitle            String?
-  seoDescription      String?
-  primaryKeyword      String?
-  secondaryKeywords   String?
-  duration            Int
-  durationInSec       Int
-  link                String?
-  thumbnail           String
-  homepageThumbnail   String?
-  websiteThumbnail    String?
-  mimefield           String
-  size                BigInt?
-  createdAt           DateTime             @default(now())
-  podcastId           Int
-  isDeleted           Boolean              @default(false)
-  detail              String?
-  spotifyLink         String?
-  appleLink           String?
-  timestamps          String?
-  youtubeUrl          String?
-  transcript          String?
-  topicsCovered       String[]             @default([])
-  reelLinks           String[]             @default([])
-  hostSlugs           String[]             @default([])
-  guestHostSlugs      String[]             @default([])
-  isFeatured          Boolean              @default(false)
-  relatedEpisodeUuids String[]             @default([])
-  episodeNumber       Int?
-  season              Int?
-  topic               String?              @default("Financing")
-  audio               String?
-  audioSize           BigInt?
-  audioStatus         String               @default("PENDING")
-  heroPhones          HeroPhone[]
-  DistributionStatus  DistributionStatus[]
-  podcast             Podcast              @relation(fields: [podcastId], references: [id])
+  id                     Int                  @id @default(autoincrement())
+  uuid                   String               @unique
+  slug                   String               @unique
+  title                  String
+  description            String
+  seoTitle               String?
+  seoDescription         String?
+  primaryKeyword         String?
+  secondaryKeywords      String?
+  duration               Int
+  durationInSec          Int
+  link                   String?
+  thumbnail              String
+  homepageThumbnail      String?
+  websiteThumbnail       String?
+  mimefield              String
+  size                   BigInt?
+  createdAt              DateTime             @default(now())
+  podcastId              Int
+  isDeleted              Boolean              @default(false)
+  detail                 String?
+  spotifyLink            String?
+  appleLink              String?
+  timestamps             String?
+  youtubeUrl             String?
+  transcript             String?
+  transcriptStatus       String               @default("PENDING")
+  transcriptLanguage     String               @default("en")
+  transcriptWords        Json?
+  transcriptSegments     Json?
+  transcriptError        String?
+  transcriptGeneratedAt  DateTime?
+  transcriptSourceAudio  String?
+  transcriptModel        String?
+  transcriptDurationMs   Int?
+  transcriptSyncOffsetMs Int                  @default(0)
+  topicsCovered          String[]             @default([])
+  reelLinks              String[]             @default([])
+  hostSlugs              String[]             @default([])
+  guestHostSlugs         String[]             @default([])
+  isFeatured             Boolean              @default(false)
+  relatedEpisodeUuids    String[]             @default([])
+  episodeNumber          Int?
+  season                 Int?
+  topic                  String?              @default("Financing")
+  audio                  String?
+  audioSize              BigInt?
+  audioStatus            String               @default("PENDING")
+  heroPhones             HeroPhone[]
+  DistributionStatus     DistributionStatus[]
+  podcast                Podcast              @relation(fields: [podcastId], references: [id])
+
+  @@index([transcriptStatus], map: "Episode_transcriptStatus_idx")
 }
 
 model Host {

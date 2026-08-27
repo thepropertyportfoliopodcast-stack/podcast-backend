@@ -8,6 +8,7 @@
     "build": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "transcripts:backfill": "node scripts/queue_transcripts.js",
     "postinstall": "prisma generate"
   },
   "prisma": {

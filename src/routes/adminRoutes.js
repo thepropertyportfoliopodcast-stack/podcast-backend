@@ -7,6 +7,7 @@ const { listHosts, getHost, createHost, updateHost } = require("../controllers/h
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
 const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth } = require("../controllers/analyticsController");
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin } = require("../controllers/adminUserController");
+const { regenerateEpisodeTranscript, backfillEpisodeTranscripts, getEpisodeTranscriptionSummary } = require("../controllers/transcriptionController");
 
 const access = (permission) => [verifyToken, requirePermission(permission)];
 
@@ -45,6 +46,9 @@ router.get("/admin/file/getAll", ...access(ADMIN_PERMISSIONS.PODCASTS), GetAllEp
 router.get("/admin/file/get/:id", ...access(ADMIN_PERMISSIONS.PODCASTS), GetEpisodeByUUID);
     
 router.post("/admin/file/update/:id", ...access(ADMIN_PERMISSIONS.PODCASTS), upload.any(), UpdateEpisode);
+router.post("/admin/file/:id/transcript/regenerate", ...access(ADMIN_PERMISSIONS.PODCASTS), regenerateEpisodeTranscript);
+router.post("/admin/transcripts/backfill", ...access(ADMIN_PERMISSIONS.PODCASTS), backfillEpisodeTranscripts);
+router.get("/admin/transcripts/status", ...access(ADMIN_PERMISSIONS.PODCASTS), getEpisodeTranscriptionSummary);
 
 router.delete("/admin/file/delete/:id", ...access(ADMIN_PERMISSIONS.PODCASTS), DeleteEpisode);
 router.delete("/admin/file/delete-permanent/:id", ...access(ADMIN_PERMISSIONS.PODCASTS), PermanentDeleteEpisode);

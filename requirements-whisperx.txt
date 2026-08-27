@@ -1,0 +1,2 @@
+# Install the CUDA-enabled PyTorch build first when the worker has an NVIDIA GPU.
+whisperx>=3.7.4,<4
