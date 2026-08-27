@@ -14,11 +14,14 @@ const STATUS = Object.freeze({
   READY: "READY",
   FAILED: "FAILED",
   UNAVAILABLE: "UNAVAILABLE",
+  CANCELLED: "CANCELLED",
+  DELETED: "DELETED",
 });
 
 let started = false;
 let running = false;
 let timer = null;
+let activeJob = null;
 
 const envBoolean = (name, fallback = false) => {
   const value = process.env[name];
@@ -55,11 +58,19 @@ async function downloadAudio(audioUrl, destination) {
   }
 }
 
-function runPython(args, timeoutMs) {
+function runPython(args, timeoutMs, episodeId) {
   return new Promise((resolve, reject) => {
     const python = process.env.WHISPERX_PYTHON || (process.platform === "win32" ? "python" : "python3");
     const child = spawn(python, args, { cwd: path.resolve(__dirname, "../.."), env: process.env, windowsHide: true });
+    activeJob = { episodeId, child };
     let stderr = "";
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      if (activeJob?.child === child) activeJob = null;
+      callback(value);
+    };
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-12000);
       if (envBoolean("WHISPERX_VERBOSE", false)) process.stderr.write(chunk);
@@ -67,15 +78,15 @@ function runPython(args, timeoutMs) {
     child.stdout.on("data", (chunk) => {
       if (envBoolean("WHISPERX_VERBOSE", false)) process.stdout.write(chunk);
     });
-    child.once("error", reject);
+    child.once("error", (error) => finish(reject, error));
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error(`WhisperX exceeded its ${Math.round(timeoutMs / 60000)} minute time limit`));
+      finish(reject, new Error(`WhisperX exceeded its ${Math.round(timeoutMs / 60000)} minute time limit`));
     }, timeoutMs);
     child.once("close", (code) => {
       clearTimeout(timeout);
-      if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `WhisperX exited with code ${code}`));
+      if (code === 0) finish(resolve);
+      else finish(reject, new Error(stderr.trim() || `WhisperX exited with code ${code}`));
     });
   });
 }
@@ -108,7 +119,7 @@ async function transcribeEpisode(episode) {
       if (process.env.WHISPERX_MAX_SPEAKERS) args.push("--max-speakers", process.env.WHISPERX_MAX_SPEAKERS);
     }
     const jobTimeoutMs = Math.max(300000, Number(process.env.WHISPERX_JOB_TIMEOUT_MS) || 21600000);
-    await runPython(args, jobTimeoutMs);
+    await runPython(args, jobTimeoutMs, episode.id);
     const payload = JSON.parse(await fsPromises.readFile(outputPath, "utf8"));
     if (!Array.isArray(payload.words) || !payload.words.length) throw new Error("WhisperX produced no word timings");
     return payload;
@@ -147,8 +158,8 @@ async function processNext() {
     try {
       const result = await transcribeEpisode(episode);
       const existingTranscriptIsGenerated = Boolean(episode.transcriptGeneratedAt);
-      await prisma.episode.update({
-        where: { id: episode.id },
+      const saved = await prisma.episode.updateMany({
+        where: { id: episode.id, transcriptStatus: STATUS.PROCESSING },
         data: {
           transcript: !episode.transcript?.trim() || existingTranscriptIsGenerated ? result.text : episode.transcript,
           transcriptStatus: STATUS.READY,
@@ -162,11 +173,12 @@ async function processNext() {
           transcriptDurationMs: Number(result.durationMs) || null,
         },
       });
-      console.log(`WhisperX completed episode ${episode.id} with ${result.words.length} aligned words`);
+      if (saved.count) console.log(`WhisperX completed episode ${episode.id} with ${result.words.length} aligned words`);
+      else console.log(`WhisperX result discarded because episode ${episode.id} was cancelled or deleted`);
     } catch (error) {
       console.error(`WhisperX failed for episode ${episode.id}:`, error);
-      await prisma.episode.update({
-        where: { id: episode.id },
+      await prisma.episode.updateMany({
+        where: { id: episode.id, transcriptStatus: STATUS.PROCESSING },
         data: { transcriptStatus: STATUS.FAILED, transcriptError: truncateError(error) },
       }).catch(() => {});
     }
@@ -200,11 +212,14 @@ async function enqueueEpisodeTranscription(episodeId, { force = false } = {}) {
   return STATUS.QUEUED;
 }
 
-async function enqueueExistingEpisodes({ force = false } = {}) {
+async function enqueueExistingEpisodes({ force = false, statuses } = {}) {
+  const eligibleStatuses = Array.isArray(statuses) && statuses.length
+    ? statuses
+    : [STATUS.PENDING, STATUS.UNAVAILABLE];
   const where = {
     isDeleted: false,
     audio: { not: null },
-    ...(force ? {} : { transcriptStatus: { in: [STATUS.PENDING, STATUS.UNAVAILABLE] } }),
+    ...(force ? {} : { transcriptStatus: { in: eligibleStatuses } }),
   };
   const result = await prisma.episode.updateMany({
     where,
@@ -220,6 +235,17 @@ async function enqueueExistingEpisodes({ force = false } = {}) {
   });
   schedule(0);
   return result.count;
+}
+
+async function cancelEpisodeTranscription(episodeId) {
+  const id = Number(episodeId);
+  const result = await prisma.episode.updateMany({
+    where: { id, transcriptStatus: { in: [STATUS.QUEUED, STATUS.PROCESSING] } },
+    data: { transcriptStatus: STATUS.CANCELLED, transcriptError: null },
+  });
+  if (activeJob?.episodeId === id) activeJob.child.kill("SIGTERM");
+  schedule(0);
+  return result.count > 0;
 }
 
 async function startTranscriptionWorker() {
@@ -247,6 +273,7 @@ module.exports = {
   STATUS,
   enqueueEpisodeTranscription,
   enqueueExistingEpisodes,
+  cancelEpisodeTranscription,
   getTranscriptionSummary,
   startTranscriptionWorker,
 };
