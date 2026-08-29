@@ -55,10 +55,14 @@ async function syncEpisodeHeroPhones(req, episode, enabled) {
     const uploadedShortVideo = shortVideoFile ? await uploadFileToSpaces(shortVideoFile) : null;
     const title = definition.title?.trim() || episode.title;
     const youtubeVideoUrl = definition.youtubeVideoUrl?.trim() || episode.youtubeUrl;
+    const descriptionWasSubmitted = Object.prototype.hasOwnProperty.call(definition, "description");
+    const phoneDescription = descriptionWasSubmitted
+      ? String(definition.description ?? "").trim() || null
+      : current?.description || episode.description || null;
     if (!title || !youtubeVideoUrl) throw new Error(`Hero phone ${index + 1} needs a title and full YouTube video URL`);
     const data = {
       title,
-      description: definition.description?.trim() || episode.description || null,
+      description: phoneDescription,
       thumbnail: uploadedThumbnail || current?.thumbnail || episode.homepageThumbnail || episode.thumbnail,
       shortVideo: uploadedShortVideo || (definition.removeShortVideo ? null : current?.shortVideo) || null,
       youtubeShortUrl: definition.youtubeShortUrl?.trim() || null,
