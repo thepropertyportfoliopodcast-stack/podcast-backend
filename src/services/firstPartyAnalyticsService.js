@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const prisma = require("../config/database");
 const { buildPublicPages } = require("./publicPageCatalogService");
+const analyticsIpExclusions = require("./analyticsIpExclusionService");
 
 const allowedEvents = new Set(["page_view", "engagement", "scroll_depth", "outbound_click", "web_vital", "media_play", "form_submit", "browser_error", "resource_error"]);
 const errorEventNames = ["browser_error", "resource_error"];
@@ -33,9 +34,10 @@ async function collect(payload, req) {
   const metadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
   const agent = req.get("user-agent") || "";
   if (/bot|crawler|spider|lighthouse|pagespeed/i.test(agent)) return { accepted: false };
+  if (await analyticsIpExclusions.isRequestExcluded(req)) return { accepted: false, excluded: true };
   const parsed = parseAgent(agent, Number(metadata.screenWidth || 0));
-  const forwarded = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
-  const ipHash = crypto.createHash("sha256").update(`${process.env.ANALYTICS_SALT || "podcast"}:${forwarded}`).digest("hex");
+  const clientIp = analyticsIpExclusions.getClientIp(req) || "";
+  const ipHash = crypto.createHash("sha256").update(`${process.env.ANALYTICS_SALT || "podcast"}:${clientIp}`).digest("hex");
   const params = metadata.campaign || {};
   await prisma.analyticsSession.upsert({
     where: { id: sessionId },

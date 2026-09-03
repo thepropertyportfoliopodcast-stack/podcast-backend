@@ -2,6 +2,7 @@ const catchAsync = require("../middleware/asyncHandler");
 const fs = require("fs");
 const { successResponse, errorResponse } = require("../utils/httpResponses");
 const firstPartyAnalytics = require("../services/firstPartyAnalyticsService");
+const analyticsIpExclusions = require("../services/analyticsIpExclusionService");
 const { buildPublicPages } = require("../services/publicPageCatalogService");
 
 const lighthouseCache = new Map();
@@ -130,6 +131,41 @@ exports.deleteAnalyticsError = catchAsync(async (req, res) => {
 exports.clearAnalyticsErrors = catchAsync(async (req, res) => {
   const result = await firstPartyAnalytics.clearErrors();
   return successResponse(res, "Analytics errors cleared", 200, result);
+});
+
+exports.listAnalyticsIpExclusions = catchAsync(async (req, res) => {
+  const result = await analyticsIpExclusions.list(req);
+  return successResponse(res, "Analytics IP whitelist retrieved", 200, result);
+});
+
+exports.createAnalyticsIpExclusion = catchAsync(async (req, res) => {
+  try {
+    const exclusion = await analyticsIpExclusions.create(req.body || {}, req.user.id);
+    return successResponse(res, "IP address excluded from analytics", 201, { exclusion });
+  } catch (error) {
+    if (error.statusCode) return errorResponse(res, error.message, error.statusCode);
+    throw error;
+  }
+});
+
+exports.updateAnalyticsIpExclusion = catchAsync(async (req, res) => {
+  try {
+    const exclusion = await analyticsIpExclusions.update(req.params.id, req.body || {});
+    return successResponse(res, "Analytics IP exclusion updated", 200, { exclusion });
+  } catch (error) {
+    if (error.statusCode) return errorResponse(res, error.message, error.statusCode);
+    throw error;
+  }
+});
+
+exports.deleteAnalyticsIpExclusion = catchAsync(async (req, res) => {
+  try {
+    const result = await analyticsIpExclusions.remove(req.params.id);
+    return successResponse(res, "IP address removed from the analytics whitelist", 200, result);
+  } catch (error) {
+    if (error.statusCode) return errorResponse(res, error.message, error.statusCode);
+    throw error;
+  }
 });
 
 exports.getLighthouseTargets = catchAsync(async (req, res) => {

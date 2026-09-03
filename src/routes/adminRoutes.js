@@ -5,7 +5,7 @@ const { ADMIN_PERMISSIONS } = require("../config/adminPermissions");
 const { upload } = require("../services/storageService");
 const { listHosts, getHost, createHost, updateHost } = require("../controllers/hostController");
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
-const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth } = require("../controllers/analyticsController");
+const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth, listAnalyticsIpExclusions, createAnalyticsIpExclusion, updateAnalyticsIpExclusion, deleteAnalyticsIpExclusion } = require("../controllers/analyticsController");
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin } = require("../controllers/adminUserController");
 const { listEpisodeTranscripts, regenerateEpisodeTranscript, cancelEpisodeTranscript, deleteEpisodeTranscript, retryFailedEpisodeTranscripts, backfillEpisodeTranscripts, getEpisodeTranscriptionSummary } = require("../controllers/transcriptionController");
 
@@ -22,6 +22,10 @@ router.delete("/admin/analytics/errors/:id", ...access(ADMIN_PERMISSIONS.ANALYTI
 router.get("/admin/analytics/lighthouse/pages", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseTargets);
 router.get("/admin/analytics/lighthouse", ...access(ADMIN_PERMISSIONS.ANALYTICS), getLighthouseAudit);
 router.get("/admin/analytics/health", ...access(ADMIN_PERMISSIONS.ANALYTICS), getWebsiteHealth);
+router.get("/admin/analytics/ip-exclusions", verifyToken, requireSuperAdmin, listAnalyticsIpExclusions);
+router.post("/admin/analytics/ip-exclusions", verifyToken, requireSuperAdmin, createAnalyticsIpExclusion);
+router.patch("/admin/analytics/ip-exclusions/:id", verifyToken, requireSuperAdmin, updateAnalyticsIpExclusion);
+router.delete("/admin/analytics/ip-exclusions/:id", verifyToken, requireSuperAdmin, deleteAnalyticsIpExclusion);
 
 router.get("/admin/hero-phone/get", ...access(ADMIN_PERMISSIONS.PODCASTS), listAdminHeroPhones);
 router.post("/admin/hero-phone/add", ...access(ADMIN_PERMISSIONS.PODCASTS), upload.fields([{ name: "thumbnail", maxCount: 1 }, { name: "shortVideo", maxCount: 1 }]), createHeroPhone);

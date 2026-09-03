@@ -6,6 +6,10 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 
+// Nginx connects to this process locally. Trust that single reverse-proxy hop
+// so req.ip is the real visitor address without trusting spoofed client headers.
+app.set("trust proxy", "loopback");
+
 const allowedOrigins = new Set([
   "http://localhost:3000",
   "http://127.0.0.1:3000",
