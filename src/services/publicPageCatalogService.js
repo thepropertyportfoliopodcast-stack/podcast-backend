@@ -17,7 +17,7 @@ async function buildPublicPages() {
   const site = (process.env.WEBSITE_URL || "https://thepropertyportfolio.com.au").replace(/\/$/, "");
   const [episodes, podcasts, hosts] = await Promise.all([
     prisma.episode.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false, publicationStatus: "PUBLISHED" },
       select: { slug: true, title: true, seoTitle: true },
       orderBy: { createdAt: "desc" },
     }),

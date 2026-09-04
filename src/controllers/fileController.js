@@ -24,7 +24,9 @@ exports.GetAllPodcasts = catchAsync(async (req, res) => {
       where: { isDeleted: false },
       include: {
         _count: {
-          select: { episodes: true }, // count episodes for each podcast
+          select: {
+            episodes: { where: { isDeleted: false, publicationStatus: "PUBLISHED" } },
+          },
         },
       },
     });
@@ -47,7 +49,10 @@ exports.GetAllPodcastswithFiles = catchAsync(async (req, res) => {
         isDeleted: false
       },
       include: {
-        episodes: { omit: { transcriptWords: true, transcriptSegments: true } },
+        episodes: {
+          where: { isDeleted: false, publicationStatus: "PUBLISHED" },
+          omit: { transcriptWords: true, transcriptSegments: true },
+        },
       },
       orderBy: {
         createdAt: "asc",
@@ -76,7 +81,7 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
     },
     include: {
       episodes: {
-        where: { isDeleted: false },
+        where: { isDeleted: false, publicationStatus: "PUBLISHED" },
         select: episodeCardSelect,
         orderBy: { createdAt: "desc" },
       },
@@ -95,7 +100,7 @@ exports.PodcastsDetail = catchAsync(async (req, res) => {
 exports.HomeEpisodesGet = catchAsync(async (req, res) => {
   try {
     const data = await prisma.episode.findMany({
-    where: { isDeleted: false, isFeatured: true },
+    where: { isDeleted: false, publicationStatus: "PUBLISHED", isFeatured: true },
     select: episodeCardSelect,
     orderBy: {
       createdAt: 'desc',
@@ -120,6 +125,7 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
 
     const whereClause = {
       isDeleted: false,
+      publicationStatus: "PUBLISHED",
       ...(search && search.trim() !== "" && {
         OR: [
           {
@@ -168,6 +174,7 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
         where: {
           topic: { not: null },
           isDeleted: false,
+          publicationStatus: "PUBLISHED",
         },
       }),
     ]);
@@ -203,6 +210,7 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
       where: {
         OR: [{ uuid: id }, { slug: id }, { slug: cleanSlug }],
         isDeleted: false,
+        publicationStatus: "PUBLISHED",
       },
       include: { podcast: { select: { uuid: true, slug: true, name: true, author: true } } },
     });
@@ -211,7 +219,7 @@ exports.GetFileByUUID = catchAsync(async (req, res) => {
     }
     const selected = Array.isArray(file.relatedEpisodeUuids) ? file.relatedEpisodeUuids.slice(0, 4) : [];
     const relatedRows = selected.length ? await prisma.episode.findMany({
-      where: { uuid: { in: selected }, isDeleted: false },
+      where: { uuid: { in: selected }, isDeleted: false, publicationStatus: "PUBLISHED" },
       select: relatedEpisodeSelect,
     }) : [];
     const byUuid = new Map(relatedRows.map((episode) => [episode.uuid, episode]));

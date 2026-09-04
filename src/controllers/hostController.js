@@ -39,7 +39,11 @@ exports.getHost = catchAsync(async (req, res) => {
     const host = await prisma.host.findFirst({ where: { OR: [{ slug: req.params.id }, { uuid: req.params.id }] } });
     if (!host) return errorResponse(res, "Host not found", 404);
     const episodes = await prisma.episode.findMany({
-      where: { OR: [{ hostSlugs: { has: host.slug } }, { guestHostSlugs: { has: host.slug } }], isDeleted: false },
+      where: {
+        OR: [{ hostSlugs: { has: host.slug } }, { guestHostSlugs: { has: host.slug } }],
+        isDeleted: false,
+        publicationStatus: "PUBLISHED",
+      },
       select: hostEpisodeCardSelect,
       orderBy: { createdAt: "desc" },
       take: 6,

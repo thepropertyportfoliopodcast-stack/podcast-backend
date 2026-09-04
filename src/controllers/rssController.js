@@ -60,6 +60,7 @@ exports.getpodcastLists = catchAsync(async (req, res) => {
     where: {
       podcastId: podcast.id,
       isDeleted: false,
+      publicationStatus: "PUBLISHED",
       ...(type === "video"
         ? { link: { not: null } }
         : { audio: { not: null } }),

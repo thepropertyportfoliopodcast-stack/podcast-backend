@@ -7,6 +7,27 @@ const { getMediaDurationFromBuffer } = require("../services/mediaDurationService
 const { createUniqueSlug } = require("../utils/slug");
 const { enqueueEpisodeTranscription, STATUS: TRANSCRIPT_STATUS } = require("../services/transcriptionService");
 
+const EPISODE_PUBLICATION = Object.freeze({
+  DRAFT: "DRAFT",
+  PUBLISHED: "PUBLISHED",
+});
+
+const normalizePublicationStatus = (value, fallback = EPISODE_PUBLICATION.PUBLISHED) =>
+  String(value || fallback).trim().toUpperCase() === EPISODE_PUBLICATION.DRAFT
+    ? EPISODE_PUBLICATION.DRAFT
+    : EPISODE_PUBLICATION.PUBLISHED;
+
+const hasMeaningfulContent = (value) => {
+  const normalized = String(value ?? "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return Boolean(normalized && normalized !== "null" && normalized !== "undefined");
+};
+
 const parseStringArray = (value) => {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
   if (typeof value !== "string" || !value.trim()) return [];
@@ -354,19 +375,31 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ,isFeatured
       ,relatedEpisodeUuids
       ,homePageHeroPhone
+      ,publicationStatus
     } = req.body;
 
-    if (!title || !description || !podcastId || !detail || (!link && !youtubeUrl) || !topic || !audio) {
+    const targetPublicationStatus = normalizePublicationStatus(publicationStatus);
+    const isDraft = targetPublicationStatus === EPISODE_PUBLICATION.DRAFT;
+    const thumbnailFile = requestFile(req, "thumbnail");
+
+    if (!hasMeaningfulContent(title) || !podcastId) {
       return errorResponse(
         res,
-        "Title, description, topic, podcastId, audio and a YouTube or video link are required",
-        401
+        "An episode title and podcast are required, including for drafts",
+        400
+      );
+    }
+
+    if (!isDraft && (!hasMeaningfulContent(description) || !hasMeaningfulContent(detail) || (!hasMeaningfulContent(link) && !hasMeaningfulContent(youtubeUrl)) || !hasMeaningfulContent(topic) || !hasMeaningfulContent(audio) || !thumbnailFile)) {
+      return errorResponse(
+        res,
+        "Publishing requires a title, description, details, category, RSS artwork, audio and a YouTube or video link",
+        400
       );
     }
 
     let thumbnail = "";
     // console.log("req.files", req.files);
-    const thumbnailFile = requestFile(req, "thumbnail");
     if (thumbnailFile) {
       thumbnail = await uploadFileToSpaces(thumbnailFile);
       if (!thumbnail) {
@@ -394,8 +427,9 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     const episodeData = {
       uuid: uuidv4(),
       slug: await createUniqueSlug(prisma, "episode", title),
-      title,
-      description,
+      title: title.trim(),
+      description: hasMeaningfulContent(description) ? description : "",
+      publicationStatus: targetPublicationStatus,
       seoTitle: seoTitle?.trim() || null,
       seoDescription: seoDescription?.trim() || null,
       primaryKeyword: primaryKeyword?.trim() || null,
@@ -422,12 +456,12 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       podcast: {
         connect: { id: Number(podcastId) },
       },
-      detail,
+      detail: hasMeaningfulContent(detail) ? detail : null,
       timestamps,
       youtubeUrl: youtubeUrl?.trim() || null,
       transcript: transcript || null,
       transcriptIsManual: Boolean(transcript?.trim()),
-      transcriptStatus: TRANSCRIPT_STATUS.QUEUED,
+      transcriptStatus: isDraft ? TRANSCRIPT_STATUS.PENDING : TRANSCRIPT_STATUS.QUEUED,
       transcriptLanguage: "en",
       transcriptSyncOffsetMs: Number.isFinite(Number.parseInt(transcriptSyncOffsetMs, 10))
         ? Math.max(-300000, Math.min(300000, Number.parseInt(transcriptSyncOffsetMs, 10)))
@@ -444,11 +478,13 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 
     const newEpisode = await prisma.episode.create({ data: episodeData });
     const heroPhones = await syncEpisodeHeroPhones(req, newEpisode, String(homePageHeroPhone).toLowerCase() === "true");
-    await enqueueEpisodeTranscription(newEpisode.id).catch((error) => {
-      console.error(`Unable to queue transcript for episode ${newEpisode.id}:`, error);
-    });
+    if (!isDraft) {
+      await enqueueEpisodeTranscription(newEpisode.id).catch((error) => {
+        console.error(`Unable to queue transcript for episode ${newEpisode.id}:`, error);
+      });
+    }
 
-    return successResponse(res, "Episode uploaded successfully", 201, { ...newEpisode, heroPhones });
+    return successResponse(res, isDraft ? "Episode draft saved successfully" : "Episode published successfully", 201, { ...newEpisode, heroPhones });
   } catch (error) {
     console.error("Error in AddEpisode:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);
@@ -535,6 +571,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       relatedEpisodeUuids,
       homePageHeroPhone,
       transcriptSyncOffsetMs,
+      publicationStatus,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -553,19 +590,48 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       return errorResponse(res, "Episode not found", 404);
     }
 
+    const targetPublicationStatus = publicationStatus === undefined
+      ? normalizePublicationStatus(existingEpisode.publicationStatus)
+      : normalizePublicationStatus(publicationStatus);
+    const isPublishingDraft = normalizePublicationStatus(existingEpisode.publicationStatus) === EPISODE_PUBLICATION.DRAFT
+      && targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED;
+    const thumbnailFile = requestFile(req, "thumbnail");
+    const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
+    const websiteThumbnailFile = requestFile(req, "websiteThumbnail");
+
+    if (isPublishingDraft) {
+      const effectiveTitle = title === undefined ? existingEpisode.title : title;
+      const effectiveDescription = description === undefined ? existingEpisode.description : description;
+      const effectiveDetail = detail === undefined ? existingEpisode.detail : detail;
+      const effectiveTopic = topic === undefined ? existingEpisode.topic : topic;
+      const effectiveYoutubeUrl = youtubeUrl === undefined ? existingEpisode.youtubeUrl : youtubeUrl;
+      const effectiveLink = isValidString(link) ? link : existingEpisode.link;
+      const effectiveAudio = isValidString(audio) ? audio : existingEpisode.audio;
+      const hasArtwork = Boolean(thumbnailFile || existingEpisode.thumbnail);
+
+      if (!hasMeaningfulContent(effectiveTitle) || !hasMeaningfulContent(effectiveDescription) || !hasMeaningfulContent(effectiveDetail) || !hasMeaningfulContent(effectiveTopic) || (!hasMeaningfulContent(effectiveLink) && !hasMeaningfulContent(effectiveYoutubeUrl)) || !hasMeaningfulContent(effectiveAudio) || !hasArtwork) {
+        return errorResponse(
+          res,
+          "Complete the title, description, details, category, RSS artwork, audio and a YouTube or video link before publishing",
+          400
+        );
+      }
+    }
+
     const updates = {};
     let previousRssThumbnail = null;
     let previousHomepageThumbnail = null;
     let previousWebsiteThumbnail = null;
 
-    if (title) updates.title = title;
-    if (description) updates.description = description;
-    if (topic) updates.topic = topic;
+    if (title?.trim()) updates.title = title.trim();
+    if (description !== undefined) updates.description = hasMeaningfulContent(description) ? description : "";
+    if (topic !== undefined) updates.topic = topic?.trim() || "Uncategorised";
+    if (publicationStatus !== undefined) updates.publicationStatus = targetPublicationStatus;
     if (seoTitle !== undefined) updates.seoTitle = seoTitle.trim() || null;
     if (seoDescription !== undefined) updates.seoDescription = seoDescription.trim() || null;
     if (primaryKeyword !== undefined) updates.primaryKeyword = primaryKeyword.trim() || null;
     if (secondaryKeywords !== undefined) updates.secondaryKeywords = secondaryKeywords.trim() || null;
-    if (detail) updates.detail = detail;
+    if (detail !== undefined) updates.detail = hasMeaningfulContent(detail) ? detail : null;
     if (timestamps !== undefined) updates.timestamps = timestamps || null;
     if (youtubeUrl !== undefined) updates.youtubeUrl = youtubeUrl.trim() || null;
     if (transcript !== undefined) {
@@ -586,6 +652,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (durationInSec !== undefined) updates.durationInSec = Math.round(Number(durationInSec));
     if (episodeNumber !== undefined) updates.episodeNumber = episodeNumber === "" ? null : Math.round(Number(episodeNumber));
     if (publishedDate) updates.createdAt = new Date(`${publishedDate}T00:00:00.000Z`);
+    else if (isPublishingDraft) updates.createdAt = new Date();
+    if (isPublishingDraft) {
+      updates.slug = await createUniqueSlug(prisma, "episode", title || existingEpisode.title, { excludeId: existingEpisode.id });
+    }
     if (mimefield !== undefined) updates.mimefield = mimefield;
     if (size !== undefined && size !== null && size !== "") updates.size = BigInt(Math.round(Number(size)));
     
@@ -597,7 +667,6 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     }
 
     // Handle thumbnail update only if new file comes
-    const thumbnailFile = requestFile(req, "thumbnail");
     if (thumbnailFile) {
       const newThumbUrl = await uploadFileToSpaces(thumbnailFile);
       if (!newThumbUrl) {
@@ -607,7 +676,6 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       previousRssThumbnail = existingEpisode.thumbnail;
     }
 
-    const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
     if (homepageThumbnailFile) {
       const newHomepageThumbnail = await uploadFileToSpaces(homepageThumbnailFile);
       if (!newHomepageThumbnail) {
@@ -617,7 +685,6 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       previousHomepageThumbnail = existingEpisode.homepageThumbnail;
     }
 
-    const websiteThumbnailFile = requestFile(req, "websiteThumbnail");
     if (websiteThumbnailFile) {
       const newWebsiteThumbnail = await uploadFileToSpaces(websiteThumbnailFile);
       if (!newWebsiteThumbnail) {
@@ -683,13 +750,18 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       if (!oldWebsiteThumbnailDeleted) console.warn("Failed to delete old website card thumbnail");
     }
     const heroPhones = await syncEpisodeHeroPhones(req, updatedEpisode, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true");
-    if (audioChanged) {
+    if ((audioChanged || isPublishingDraft) && targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED) {
       await enqueueEpisodeTranscription(updatedEpisode.id, { force: true }).catch((error) => {
         console.error(`Unable to requeue transcript for episode ${updatedEpisode.id}:`, error);
       });
     }
 
-    return successResponse(res, "Episode updated successfully", 200, { ...updatedEpisode, heroPhones });
+    const responseMessage = targetPublicationStatus === EPISODE_PUBLICATION.DRAFT
+      ? "Episode draft saved successfully"
+      : isPublishingDraft
+        ? "Episode published successfully"
+        : "Episode updated successfully";
+    return successResponse(res, responseMessage, 200, { ...updatedEpisode, heroPhones });
   } catch (error) {
     console.error("Error in UpdateEpisode:", error);
     return errorResponse(res, error.message || "Internal Server Error", 500);

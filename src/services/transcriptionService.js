@@ -169,7 +169,12 @@ async function updateEpisodeProgress(episodeId, progress, note) {
 
 async function claimNextEpisode() {
   const episode = await prisma.episode.findFirst({
-    where: { transcriptStatus: STATUS.QUEUED, isDeleted: false, audio: { not: null } },
+    where: {
+      transcriptStatus: STATUS.QUEUED,
+      isDeleted: false,
+      publicationStatus: "PUBLISHED",
+      audio: { not: null },
+    },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
   if (!episode) return null;
@@ -246,6 +251,18 @@ async function processNext() {
 async function enqueueEpisodeTranscription(episodeId, { force = false } = {}) {
   const episode = await prisma.episode.findUnique({ where: { id: Number(episodeId) } });
   if (!episode) throw new Error("Episode not found");
+  if (episode.publicationStatus !== "PUBLISHED") {
+    await prisma.episode.update({
+      where: { id: episode.id },
+      data: {
+        transcriptStatus: STATUS.PENDING,
+        transcriptError: null,
+        transcriptProgress: 0,
+        transcriptProgressNote: "Publish the episode to start transcription",
+      },
+    });
+    return STATUS.PENDING;
+  }
   if (!episode.audio?.trim()) {
     await prisma.episode.update({ where: { id: episode.id }, data: { transcriptStatus: STATUS.UNAVAILABLE, transcriptError: "No episode audio is available" } });
     return STATUS.UNAVAILABLE;
@@ -277,6 +294,7 @@ async function enqueueExistingEpisodes({ force = false, statuses } = {}) {
     : [STATUS.PENDING, STATUS.UNAVAILABLE];
   const where = {
     isDeleted: false,
+    publicationStatus: "PUBLISHED",
     audio: { not: null },
     ...(force ? {} : { transcriptStatus: { in: eligibleStatuses } }),
   };

@@ -15,7 +15,11 @@ const removeMedia = async (...urls) => {
 
 exports.listPublicHeroPhones = catchAsync(async (_req, res) => {
   const linked = await prisma.heroPhone.findMany({
-    where: { isActive: true, episodeId: { not: null }, episode: { isDeleted: false } },
+    where: {
+      isActive: true,
+      episodeId: { not: null },
+      episode: { isDeleted: false, publicationStatus: "PUBLISHED" },
+    },
     orderBy: [{ episode: { createdAt: "desc" } }, { createdAt: "desc" }],
     take: 3,
   });

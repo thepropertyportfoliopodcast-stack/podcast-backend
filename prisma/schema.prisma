@@ -65,6 +65,7 @@ model Episode {
   createdAt              DateTime             @default(now())
   podcastId              Int
   isDeleted              Boolean              @default(false)
+  publicationStatus      String               @default("PUBLISHED")
   detail                 String?
   spotifyLink            String?
   appleLink              String?
@@ -103,6 +104,7 @@ model Episode {
   podcast                Podcast              @relation(fields: [podcastId], references: [id])
 
   @@index([transcriptStatus], map: "Episode_transcriptStatus_idx")
+  @@index([publicationStatus], map: "Episode_publicationStatus_idx")
 }
 
 model Host {

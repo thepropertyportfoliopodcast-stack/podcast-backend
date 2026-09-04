@@ -21,12 +21,18 @@ function removeEpisodeNumberFromSlug(value = "") {
   return value.toString().replace(/^ep(?:isode)?-\d+-/i, "");
 }
 
-async function createUniqueSlug(prisma, model, value) {
+async function createUniqueSlug(prisma, model, value, { excludeId } = {}) {
   const base = slugify(model === "episode" ? removeEpisodeNumber(value) : value);
   let candidate = base;
   let suffix = 2;
 
-  while (await prisma[model].findUnique({ where: { slug: candidate }, select: { id: true } })) {
+  while (await prisma[model].findFirst({
+    where: {
+      slug: candidate,
+      ...(excludeId ? { id: { not: Number(excludeId) } } : {}),
+    },
+    select: { id: true },
+  })) {
     candidate = `${base}-${suffix}`;
     suffix += 1;
   }
