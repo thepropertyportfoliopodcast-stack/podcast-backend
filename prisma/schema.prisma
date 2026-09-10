@@ -19,6 +19,7 @@ model User {
   password    String
   role        UserRole @default(ADMIN)
   permissions String[] @default([])
+  avatar      String   @default("001-graphic designer.svg")
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

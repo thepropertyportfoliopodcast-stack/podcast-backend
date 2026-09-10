@@ -6,7 +6,7 @@ const { upload } = require("../services/storageService");
 const { listHosts, getHost, createHost, updateHost } = require("../controllers/hostController");
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
 const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth, listAnalyticsIpExclusions, createAnalyticsIpExclusion, updateAnalyticsIpExclusion, deleteAnalyticsIpExclusion } = require("../controllers/analyticsController");
-const { listAdmins, createAdmin, updateAdmin, deleteAdmin } = require("../controllers/adminUserController");
+const { listAdmins, createAdmin, updateAdmin, deleteAdmin, updateMyAvatar } = require("../controllers/adminUserController");
 const { listEpisodeTranscripts, regenerateEpisodeTranscript, cancelEpisodeTranscript, deleteEpisodeTranscript, retryFailedEpisodeTranscripts, backfillEpisodeTranscripts, getEpisodeTranscriptionSummary } = require("../controllers/transcriptionController");
 
 const access = (permission) => [verifyToken, requirePermission(permission)];
@@ -15,6 +15,7 @@ router.get("/admin/users", verifyToken, requireSuperAdmin, listAdmins);
 router.post("/admin/users", verifyToken, requireSuperAdmin, createAdmin);
 router.patch("/admin/users/:id", verifyToken, requireSuperAdmin, updateAdmin);
 router.delete("/admin/users/:id", verifyToken, requireSuperAdmin, deleteAdmin);
+router.patch("/admin/profile/avatar", verifyToken, updateMyAvatar);
 
 router.get("/admin/analytics", ...access(ADMIN_PERMISSIONS.ANALYTICS), getDashboardAnalytics);
 router.delete("/admin/analytics/errors", ...access(ADMIN_PERMISSIONS.ANALYTICS), clearAnalyticsErrors);

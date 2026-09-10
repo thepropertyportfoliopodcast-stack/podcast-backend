@@ -16,7 +16,7 @@ exports.verifyToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
     const user = await prisma.user.findUnique({
       where: { id: Number(decoded.id) },
-      select: { id: true, name: true, email: true, role: true, permissions: true, isActive: true },
+      select: { id: true, name: true, email: true, role: true, permissions: true, avatar: true, isActive: true },
     });
     if (!user || !user.isActive) return res.status(401).json({ status: false, message: "This admin account is inactive" });
     req.user = user;

@@ -4,7 +4,15 @@ const prisma = require("../config/database");
 const { errorResponse, successResponse } = require("../utils/httpResponses");
 const { normalizePermissions } = require("../config/adminPermissions");
 
-const publicUser = { id: true, name: true, email: true, role: true, permissions: true, isActive: true, createdAt: true, updatedAt: true };
+const publicUser = { id: true, name: true, email: true, role: true, permissions: true, avatar: true, isActive: true, createdAt: true, updatedAt: true };
+const avatarOptions = new Set([
+  "001-graphic designer.svg", "002-chef.svg", "003-farmer.svg", "004-chemist.svg", "005-artist.svg",
+  "006-doctor.svg", "007-mechanic.svg", "008-firefighter.svg", "009-astronaut.svg", "010-businessman.svg",
+  "011-news anchor.svg", "012-policeman.svg", "013-speaker.svg", "014-engineer.svg", "015-pilot.svg",
+  "016-traveller.svg", "017-courier.svg", "018-lawyer.svg", "019-photographer.svg", "020-judge.svg",
+  "021-painter.svg", "022-diver.svg", "023-postman.svg", "024-detective.svg", "025-american football player.svg",
+  "026-soldier.svg", "027-film director.svg", "028-lifeguard.svg", "029-tailor.svg", "030-writer.svg",
+]);
 const validRole = (role) => role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "ADMIN";
 
 exports.listAdmins = catchAsync(async (_req, res) => {
@@ -58,4 +66,16 @@ exports.deleteAdmin = catchAsync(async (req, res) => {
   if (!result.count) return errorResponse(res, "This administrator can no longer be deleted", 409);
 
   return successResponse(res, "Administrator deleted");
+});
+
+exports.updateMyAvatar = catchAsync(async (req, res) => {
+  const avatar = typeof req.body.avatar === "string" ? req.body.avatar : "";
+  if (!avatarOptions.has(avatar)) return errorResponse(res, "Choose a valid administrator avatar", 400);
+
+  const user = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { avatar },
+    select: publicUser,
+  });
+  return successResponse(res, "Avatar updated", 200, { user });
 });
