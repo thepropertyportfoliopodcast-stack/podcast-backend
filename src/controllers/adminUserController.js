@@ -6,12 +6,10 @@ const { normalizePermissions } = require("../config/adminPermissions");
 
 const publicUser = { id: true, name: true, email: true, role: true, permissions: true, avatar: true, isActive: true, createdAt: true, updatedAt: true };
 const avatarOptions = new Set([
-  "001-graphic designer.svg", "002-chef.svg", "003-farmer.svg", "004-chemist.svg", "005-artist.svg",
-  "006-doctor.svg", "007-mechanic.svg", "008-firefighter.svg", "009-astronaut.svg", "010-businessman.svg",
-  "011-news anchor.svg", "012-policeman.svg", "013-speaker.svg", "014-engineer.svg", "015-pilot.svg",
-  "016-traveller.svg", "017-courier.svg", "018-lawyer.svg", "019-photographer.svg", "020-judge.svg",
-  "021-painter.svg", "022-diver.svg", "023-postman.svg", "024-detective.svg", "025-american football player.svg",
-  "026-soldier.svg", "027-film director.svg", "028-lifeguard.svg", "029-tailor.svg", "030-writer.svg",
+  "001-monk.svg", "002-crossbow.svg", "003-bow.svg", "004-priest.svg", "005-martial.svg",
+  "006-barbarian.svg", "007-gunnery.svg", "008-samurai.svg", "009-alchemy.svg", "010-druid.svg",
+  "011-adventurer.svg", "012-dragon.svg", "013-adventurer.svg", "014-swordsman.svg", "015-knight.svg",
+  "016-ninja.svg", "017-wizard.svg", "018-magician.svg", "019-assasin.svg", "020-thief.svg",
 ]);
 const validRole = (role) => role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "ADMIN";
 
