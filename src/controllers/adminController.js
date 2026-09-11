@@ -277,14 +277,17 @@ exports.UpdatePodcast = catchAsync(async (req, res) => {
       return errorResponse(res, "Podcast not found", 404);
     }
 
-    // Handle thumbnail update
+    // Handle thumbnail update only if a new file comes in.
+    // Upload the new file and save it FIRST — never delete the old file
+    // before the replacement is safely uploaded and persisted.
+    let previousThumbnail = null;
     if (req.file) {
-      const isDeleted = await deleteFileFromSpaces(existingPodcast.thumbnail);
-      if (!isDeleted) {
-        return errorResponse(res, "Unable to delete old thumbnail", 500);
-      }
       const newThumbnailKey = await uploadFileToSpaces(req.file);
+      if (!newThumbnailKey) {
+        return errorResponse(res, "Thumbnail upload failed. The existing image was kept.", 502);
+      }
       dataToUpdate.thumbnail = newThumbnailKey;
+      previousThumbnail = existingPodcast.thumbnail;
     }
 
     // Update in DB
@@ -292,6 +295,13 @@ exports.UpdatePodcast = catchAsync(async (req, res) => {
       where: { uuid: id },
       data: dataToUpdate,
     });
+
+    // Clean up the old file AFTER the update succeeds. A failure here should
+    // never block the response — the record already points at the new image.
+    if (previousThumbnail && previousThumbnail !== updated.thumbnail) {
+      const oldDeleted = await deleteFileFromSpaces(previousThumbnail);
+      if (!oldDeleted) console.warn(`Failed to delete old podcast thumbnail for ${id}:`, previousThumbnail);
+    }
 
     return successResponse(res, "Podcast updated successfully", 200, updated);
   } catch (error) {
@@ -922,28 +932,42 @@ exports.UpdateGuide = catchAsync(async (req, res) => {
       return errorResponse(res, "Guide not found", 404);
     }
 
+    // Upload new files FIRST, and only delete the old ones AFTER the DB
+    // update succeeds — a delete failure should never block the update.
+    let previousThumbnail = null;
+    let previousGuideLink = null;
+
     if (req.files?.thumbnail?.[0]) {
-      const isDeleted = await deleteFileFromSpaces(existingData.thumbnail);
-      if (!isDeleted) {
-        return errorResponse(res, "Unable to delete old thumbnail", 500);
-      }
       const fileKey = await uploadFileToSpaces(req.files.thumbnail[0]);
+      if (!fileKey) {
+        return errorResponse(res, "Thumbnail upload failed. The existing image was kept.", 502);
+      }
       dataToUpdate.thumbnail = fileKey;
+      previousThumbnail = existingData.thumbnail;
     }
 
     if (req.files?.guide?.[0]) {
-      const isDeleted = await deleteFileFromSpaces(existingData.link);
-      if (!isDeleted) {
-        return errorResponse(res, "Unable to delete old guide file", 500);
-      }
       const fileKey = await uploadFileToSpaces(req.files.guide[0]);
+      if (!fileKey) {
+        return errorResponse(res, "Guide file upload failed. The existing file was kept.", 502);
+      }
       dataToUpdate.link = fileKey;
+      previousGuideLink = existingData.link;
     }
 
     const updatedGuide = await prisma.guide.update({
       where: { uuid: id },
       data: dataToUpdate,
     });
+
+    if (previousThumbnail && previousThumbnail !== updatedGuide.thumbnail) {
+      const oldThumbnailDeleted = await deleteFileFromSpaces(previousThumbnail);
+      if (!oldThumbnailDeleted) console.warn(`Failed to delete old guide thumbnail for ${id}:`, previousThumbnail);
+    }
+    if (previousGuideLink && previousGuideLink !== updatedGuide.link) {
+      const oldGuideDeleted = await deleteFileFromSpaces(previousGuideLink);
+      if (!oldGuideDeleted) console.warn(`Failed to delete old guide file for ${id}:`, previousGuideLink);
+    }
 
     return successResponse(res, "Guide updated successfully", 200, updatedGuide);
   } catch (error) {
