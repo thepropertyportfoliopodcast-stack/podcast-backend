@@ -125,6 +125,11 @@ async function clearErrors() {
 }
 
 async function report(requestedRange = {}) {
+  if (requestedRange.path != null && (typeof requestedRange.path !== "string" || !requestedRange.path.startsWith("/") || requestedRange.path.length > 500)) {
+    const error = new Error("Choose a valid page path for analytics");
+    error.statusCode = 400;
+    throw error;
+  }
   await resolveQuietErrors();
   const today = dateKey(new Date());
   const availability = await prisma.analyticsEvent.aggregate({ _min: { createdAt: true } });
@@ -138,12 +143,18 @@ async function report(requestedRange = {}) {
     error.statusCode = 400;
     throw error;
   }
-  const [events, sessions, realtime, publicPages] = await Promise.all([
+  const [allEvents, allSessions, allRealtime, publicPages] = await Promise.all([
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: start, lte: end } }, select: { id: true, name: true, path: true, title: true, value: true, metadata: true, sessionId: true, visitorId: true, createdAt: true, isResolved: true }, orderBy: { createdAt: "asc" } }),
     prisma.analyticsSession.findMany({ where: { firstSeenAt: { lte: end }, lastSeenAt: { gte: start } }, select: { id: true, visitorId: true, landingPage: true, referrer: true, source: true, medium: true, campaign: true, deviceType: true, browser: true, operatingSystem: true, country: true, firstSeenAt: true, lastSeenAt: true } }),
     prisma.analyticsEvent.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 60000) }, name: "page_view" }, select: { sessionId: true, path: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
     buildPublicPages(),
   ]);
+  // Match the canonical path exactly, including visits with query strings.
+  const selectedPath = requestedRange.path ? cleanPath(requestedRange.path) : null;
+  const events = selectedPath ? allEvents.filter((event) => cleanPath(event.path) === selectedPath) : allEvents;
+  const activeSessionIds = new Set(events.filter((event) => event.name === "page_view").map((event) => event.sessionId));
+  const sessions = allSessions.filter((session) => activeSessionIds.has(session.id));
+  const realtime = selectedPath ? allRealtime.filter((event) => cleanPath(event.path) === selectedPath) : allRealtime;
   const seoTitleByPath = new Map(publicPages.map((page) => [page.path, page.seoTitle]));
   const pageTitle = (path, fallback) => seoTitleByPath.get(cleanPath(path)) || fallback || cleanPath(path);
   const pageViews = events.filter((event) => event.name === "page_view");
@@ -230,12 +241,13 @@ async function report(requestedRange = {}) {
   const platformConversions = [...conversionMap.values()].map((row) => ({ ...row, visitors: row.visitors.size })).sort((a, b) => b.clicks - a.clicks);
   const bounced = sessions.filter((session)=>viewsBySession[session.id] === 1 && !(engagedBySession[session.id] >= 10)).length;
   return {
+    path: selectedPath,
     range: { startDate: dateKey(start), endDate: dateKey(end) },
     availableRange: { minDate, maxDate: today },
-    summary: { visitors: unique(pageViews.map((e)=>e.visitorId)), sessions: unique(pageViews.map((e)=>e.sessionId)), pageViews: pageViews.length, pagesPerSession: pageViews.length / Math.max(unique(pageViews.map((e)=>e.sessionId)),1), averageEngagement: Object.values(engagedBySession).reduce((a,b)=>a+b,0)/Math.max(Object.keys(engagedBySession).length,1), bounceRate: sessions.length ? bounced/sessions.length : 0, events: events.length },
+    summary: { visitors: unique(pageViews.map((e)=>e.visitorId)), sessions: unique(pageViews.map((e)=>e.sessionId)), pageViews: pageViews.length, pagesPerSession: pageViews.length / Math.max(unique(pageViews.map((e)=>e.sessionId)),1), averageEngagement: Object.values(engagedBySession).reduce((a,b)=>a+b,0)/Math.max(unique(pageViews.map((event) => event.sessionId)),1), bounceRate: sessions.length ? bounced/sessions.length : 0, events: events.length },
     realtime: { visitors: unique(realtime.map((e)=>e.sessionId)), pages: countBy(realtime, (e)=>pageTitle(e.path)).slice(0,10) },
     trend: Object.values(trendMap).map((row)=>({ date: row.date, views: row.views, visitors: row.visitors.size, sessions: row.sessions.size })),
-    pages, sources: countBy(sessions, (s)=>s.source || (s.referrer ? new URL(s.referrer, "https://direct.local").hostname : "Direct" )).slice(0,12), referrers: countBy(sessions.filter((s)=>s.referrer), (s)=>{ try{return new URL(s.referrer).hostname}catch{return "Other"} }).slice(0,12), campaigns: countBy(sessions.filter((s)=>s.campaign), (s)=>s.campaign).slice(0,12), devices: countBy(sessions, (s)=>s.deviceType), browsers: countBy(sessions, (s)=>s.browser), operatingSystems: countBy(sessions, (s)=>s.operatingSystem), countries: countBy(sessions, (s)=>s.country).slice(0,12),
+    pages, sources: countBy(sessions, (s)=>sessionSource(s)).slice(0,12), referrers: countBy(sessions.filter((s)=>s.referrer), (s)=>{ try{return new URL(s.referrer).hostname}catch{return "Other"} }).slice(0,12), campaigns: countBy(sessions.filter((s)=>s.campaign), (s)=>s.campaign).slice(0,12), devices: countBy(sessions, (s)=>s.deviceType), browsers: countBy(sessions, (s)=>s.browser), operatingSystems: countBy(sessions, (s)=>s.operatingSystem), countries: countBy(sessions, (s)=>s.country).slice(0,12),
     platforms: { youtube: platform(/youtube|youtu\.be/i), spotify: platform(/spotify/i), apple: platform(/podcasts\.apple|apple\.com/i) },
     sourcePages,
     platformConversions,

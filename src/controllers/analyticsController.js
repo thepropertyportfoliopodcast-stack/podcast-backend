@@ -118,7 +118,7 @@ exports.collectAnalytics = catchAsync(async (req, res) => {
 });
 
 exports.getDashboardAnalytics = catchAsync(async (req, res) => {
-  const analytics = await firstPartyAnalytics.report({ startDate: req.query.startDate, endDate: req.query.endDate });
+  const analytics = await firstPartyAnalytics.report({ startDate: req.query.startDate, endDate: req.query.endDate, path: req.query.path });
   return successResponse(res, "Analytics retrieved", 200, { analytics });
 });
 
