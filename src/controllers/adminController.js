@@ -56,56 +56,72 @@ const parseHeroPhones = (value) => {
 
 const isEpisodeArtwork = (url, episode) => !url || url === episode.thumbnail || url === episode.homepageThumbnail || url === episode.websiteThumbnail;
 
-async function syncEpisodeHeroPhones(req, episode, enabled) {
-  const existing = await prisma.heroPhone.findMany({ where: { episodeId: episode.id } });
-  if (!enabled) {
-    await prisma.heroPhone.deleteMany({ where: { episodeId: episode.id } });
-    await Promise.all(existing.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode)).map((url) => deleteFileFromSpaces(url)));
-    return [];
-  }
-  const definitions = parseHeroPhones(req.body.heroPhones);
-  if (!definitions.length) throw new Error("Add at least one Home_Page_Hero_Phone item or turn the option off");
-  const kept = new Set();
-  const saved = [];
-  for (let index = 0; index < definitions.length; index += 1) {
-    const definition = definitions[index] || {};
+const episodeError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
+
+function episodeSaveError(res, error) {
+  if (["P2021", "P2022"].includes(error.code)) return errorResponse(res, "The episode database schema is out of date. Apply the backend database migrations and regenerate Prisma before saving episodes.", 503);
+  if (["P2003", "P2025"].includes(error.code)) return errorResponse(res, "The selected podcast or episode no longer exists. Refresh the page and select it again.", 404);
+  return errorResponse(res, error.message || "Unable to save the episode", error.statusCode || 500);
+}
+
+// Upload and validate before opening a database transaction. Persist the episode
+// and all of its phone records together so a failed save cannot leave a duplicate.
+async function prepareEpisodeHeroPhones(req, episode, enabled, previousEpisode = episode) {
+  const existing = episode.id ? await prisma.heroPhone.findMany({ where: { episodeId: episode.id } }) : [];
+  const isDraft = episode.publicationStatus === EPISODE_PUBLICATION.DRAFT;
+  const definitions = enabled ? (req.body.heroPhones === undefined ? existing : parseHeroPhones(req.body.heroPhones)) : [];
+  if (enabled && !definitions.length && !isDraft) throw episodeError("Add at least one Home_Page_Hero_Phone item or turn the option off");
+  const pending = definitions.map((entry, index) => {
+    const definition = entry && typeof entry === "object" ? entry : {};
     const current = definition.uuid ? existing.find((phone) => phone.uuid === definition.uuid) : null;
-    const thumbnailFile = requestFile(req, `heroPhoneThumbnail_${index}`);
-    const shortVideoFile = requestFile(req, `heroPhoneVideo_${index}`);
-    const uploadedThumbnail = thumbnailFile ? await uploadFileToSpaces(thumbnailFile) : null;
-    const uploadedShortVideo = shortVideoFile ? await uploadFileToSpaces(shortVideoFile) : null;
-    const title = definition.title?.trim() || episode.title;
-    const youtubeVideoUrl = definition.youtubeVideoUrl?.trim() || episode.youtubeUrl;
-    const descriptionWasSubmitted = Object.prototype.hasOwnProperty.call(definition, "description");
-    const phoneDescription = descriptionWasSubmitted
-      ? String(definition.description ?? "").trim() || null
-      : current?.description || episode.description || null;
-    if (!title || !youtubeVideoUrl) throw new Error(`Hero phone ${index + 1} needs a title and full YouTube video URL`);
-    const data = {
+    const title = String(definition.title || "").trim() || episode.title;
+    const youtubeVideoUrl = String(definition.youtubeVideoUrl || "").trim() || episode.youtubeUrl || "";
+    if (!isDraft && (!title || !youtubeVideoUrl)) throw episodeError(`Hero phone ${index + 1} needs a title and full YouTube video URL`);
+    return { definition, current, index, data: {
       title,
-      description: phoneDescription,
-      thumbnail: uploadedThumbnail || current?.thumbnail || episode.homepageThumbnail || episode.thumbnail,
-      shortVideo: uploadedShortVideo || (definition.removeShortVideo ? null : current?.shortVideo) || null,
-      youtubeShortUrl: definition.youtubeShortUrl?.trim() || null,
+      description: Object.prototype.hasOwnProperty.call(definition, "description") ? String(definition.description ?? "").trim() || null : current?.description || episode.description || null,
+      thumbnail: current?.thumbnail && !isEpisodeArtwork(current.thumbnail, previousEpisode)
+        ? current.thumbnail : episode.homepageThumbnail || episode.thumbnail || "",
+      shortVideo: definition.removeShortVideo ? null : current?.shortVideo || null,
+      youtubeShortUrl: String(definition.youtubeShortUrl || "").trim() || null,
       youtubeVideoUrl,
       displayOrder: index,
       isActive: definition.isActive !== false,
-      episodeId: episode.id,
-    };
-    const phone = current
-      ? await prisma.heroPhone.update({ where: { id: current.id }, data })
-      : await prisma.heroPhone.create({ data: { uuid: uuidv4(), ...data } });
-    kept.add(phone.id); saved.push(phone);
-    const obsoleteMedia = [uploadedThumbnail && current?.thumbnail, (uploadedShortVideo || definition.removeShortVideo) && current?.shortVideo].filter((url) => !isEpisodeArtwork(url, episode));
-    await Promise.all(obsoleteMedia.map((url) => deleteFileFromSpaces(url)));
+    } };
+  });
+  const obsolete = [];
+  for (const item of pending) {
+    for (const [field, input] of [["thumbnail", `heroPhoneThumbnail_${item.index}`], ["shortVideo", `heroPhoneVideo_${item.index}`]]) {
+      const file = requestFile(req, input);
+      if (!file) continue;
+      const url = await uploadFileToSpaces(file);
+      if (!url) throw episodeError(`Hero phone ${item.index + 1} ${field === "thumbnail" ? "thumbnail" : "preview video"} upload failed. Please reselect the file and try again.`, 502);
+      item.data[field] = url;
+      if (item.current?.[field]) obsolete.push(item.current[field]);
+    }
+    if (item.definition.removeShortVideo && item.current?.shortVideo) obsolete.push(item.current.shortVideo);
   }
+  const kept = new Set(pending.map((item) => item.current?.id).filter(Boolean));
   const removed = existing.filter((phone) => !kept.has(phone.id));
-  if (removed.length) {
-    await prisma.heroPhone.deleteMany({ where: { id: { in: removed.map((phone) => phone.id) } } });
-    await Promise.all(removed.flatMap((phone) => [phone.thumbnail, phone.shortVideo]).filter((url) => !isEpisodeArtwork(url, episode)).map((url) => deleteFileFromSpaces(url)));
-  }
-  return saved;
+  obsolete.push(...removed.flatMap((phone) => [phone.thumbnail, phone.shortVideo]));
+  return {
+    async save(db, episodeId) {
+      const saved = [];
+      for (const { current, data } of pending) {
+        saved.push(current
+          ? await db.heroPhone.update({ where: { id: current.id }, data: { ...data, episodeId } })
+          : await db.heroPhone.create({ data: { uuid: uuidv4(), ...data, episodeId } }));
+      }
+      if (removed.length) await db.heroPhone.deleteMany({ where: { id: { in: removed.map((phone) => phone.id) } } });
+      return saved;
+    },
+    async cleanup() {
+      const retained = new Set(pending.flatMap((item) => [item.data.thumbnail, item.data.shortVideo]));
+      await Promise.all([...new Set(obsolete)].filter((url) => !isEpisodeArtwork(url, episode) && !retained.has(url)).map((url) => deleteFileFromSpaces(url)));
+    },
+  };
 }
+
 
 
 
@@ -408,6 +424,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       );
     }
 
+    const parsedPodcastId = Number(podcastId);
+    if (!Number.isSafeInteger(parsedPodcastId) || parsedPodcastId <= 0) return errorResponse(res, "Select a valid podcast before saving the episode", 400);
+    const podcast = await prisma.podcast.findUnique({ where: { id: parsedPodcastId } });
+    if (!podcast || podcast.isDeleted) return errorResponse(res, "The selected podcast was not found", 404);
+
     let thumbnail = "";
     // console.log("req.files", req.files);
     if (thumbnailFile) {
@@ -432,6 +453,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
         return errorResponse(res, "Website card thumbnail upload failed. Check the configured image storage.", 502);
       }
     }
+    if (String(req.body.sharedWebsiteArtwork).toLowerCase() === "true" && websiteThumbnail) homepageThumbnail = websiteThumbnail;
     // console.log("thumbnail", thumbnail);
 
     const episodeData = {
@@ -486,8 +508,12 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ...(publishedDate ? { createdAt: new Date(`${publishedDate}T00:00:00.000Z`) } : {}),
     };
 
-    const newEpisode = await prisma.episode.create({ data: episodeData });
-    const heroPhones = await syncEpisodeHeroPhones(req, newEpisode, String(homePageHeroPhone).toLowerCase() === "true");
+    const phones = await prepareEpisodeHeroPhones(req, episodeData, String(homePageHeroPhone).toLowerCase() === "true");
+    const { newEpisode, heroPhones } = await prisma.$transaction(async (db) => {
+      const newEpisode = await db.episode.create({ data: episodeData });
+      const heroPhones = await phones.save(db, newEpisode.id);
+      return { newEpisode, heroPhones };
+    });
     if (!isDraft) {
       await enqueueEpisodeTranscription(newEpisode.id).catch((error) => {
         console.error(`Unable to queue transcript for episode ${newEpisode.id}:`, error);
@@ -497,7 +523,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     return successResponse(res, isDraft ? "Episode draft saved successfully" : "Episode published successfully", 201, { ...newEpisode, heroPhones });
   } catch (error) {
     console.error("Error in AddEpisode:", error);
-    return errorResponse(res, error.message || "Internal Server Error", 500);
+    return episodeSaveError(res, error);
   }
 });
 
@@ -704,6 +730,11 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       previousWebsiteThumbnail = existingEpisode.websiteThumbnail;
     }
 
+    if (String(req.body.sharedWebsiteArtwork).toLowerCase() === "true" && updates.websiteThumbnail) {
+      updates.homepageThumbnail = updates.websiteThumbnail;
+      previousHomepageThumbnail = existingEpisode.homepageThumbnail;
+    }
+
     const isValidLink =
       typeof link === "string" &&
       link.trim() !== "" &&
@@ -711,13 +742,6 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       link.trim().toLowerCase() !== "undefined";
 
     if (isValidLink && link.trim() !== existingEpisode.link) {
-      if (existingEpisode.link) {
-        const isVideoDeleted = await deleteFileFromSpaces(existingEpisode.link);
-        if (!isVideoDeleted) {
-          console.warn("Failed to delete old video file");
-        }
-      }
-
       updates.link = link.trim();
     }
 
@@ -729,13 +753,6 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     const audioChanged = isValidAudio && audio.trim() !== existingEpisode.audio;
 
     if (audioChanged) {
-      if (existingEpisode.audio) {
-        const isAudioDeleted = await deleteFileFromSpaces(existingEpisode.audio);
-        if (!isAudioDeleted) {
-          console.warn("Failed to delete old audio file");
-        }
-      }
-
       updates.audio = audio.trim();
       updates.audioStatus = "COMPLETED";
     }
@@ -743,23 +760,28 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       updates.audioSize = BigInt(Math.round(Number(audioSize)));
     }
 
-    const updatedEpisode = await prisma.episode.update({
-      where: { uuid: id },
-      data: updates,
+    const phones = await prepareEpisodeHeroPhones(req, { ...existingEpisode, ...updates }, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true", existingEpisode);
+    const { updatedEpisode, heroPhones } = await prisma.$transaction(async (db) => {
+      const updatedEpisode = await db.episode.update({ where: { uuid: id }, data: updates });
+      const heroPhones = await phones.save(db, updatedEpisode.id);
+      return { updatedEpisode, heroPhones };
     });
-    if (previousRssThumbnail && previousRssThumbnail !== updatedEpisode.thumbnail) {
+    await phones.cleanup();
+    if (updates.link && existingEpisode.link && updates.link !== existingEpisode.link) await deleteFileFromSpaces(existingEpisode.link);
+    if (audioChanged && existingEpisode.audio) await deleteFileFromSpaces(existingEpisode.audio);
+    const retainedArtwork = new Set([updatedEpisode.thumbnail, updatedEpisode.homepageThumbnail, updatedEpisode.websiteThumbnail, ...heroPhones.map((phone) => phone.thumbnail)]);
+    if (previousRssThumbnail && !retainedArtwork.has(previousRssThumbnail)) {
       const oldRssThumbnailDeleted = await deleteFileFromSpaces(previousRssThumbnail);
       if (!oldRssThumbnailDeleted) console.warn("Failed to delete old RSS episode artwork");
     }
-    if (previousHomepageThumbnail && previousHomepageThumbnail !== updatedEpisode.homepageThumbnail) {
+    if (previousHomepageThumbnail && !retainedArtwork.has(previousHomepageThumbnail)) {
       const oldHomepageThumbnailDeleted = await deleteFileFromSpaces(previousHomepageThumbnail);
       if (!oldHomepageThumbnailDeleted) console.warn("Failed to delete old homepage hero image");
     }
-    if (previousWebsiteThumbnail && previousWebsiteThumbnail !== updatedEpisode.websiteThumbnail) {
+    if (previousWebsiteThumbnail && !retainedArtwork.has(previousWebsiteThumbnail)) {
       const oldWebsiteThumbnailDeleted = await deleteFileFromSpaces(previousWebsiteThumbnail);
       if (!oldWebsiteThumbnailDeleted) console.warn("Failed to delete old website card thumbnail");
     }
-    const heroPhones = await syncEpisodeHeroPhones(req, updatedEpisode, homePageHeroPhone === undefined ? existingEpisode.heroPhones.length > 0 : String(homePageHeroPhone).toLowerCase() === "true");
     if ((audioChanged || isPublishingDraft) && targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED) {
       await enqueueEpisodeTranscription(updatedEpisode.id, { force: true }).catch((error) => {
         console.error(`Unable to requeue transcript for episode ${updatedEpisode.id}:`, error);
@@ -774,7 +796,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     return successResponse(res, responseMessage, 200, { ...updatedEpisode, heroPhones });
   } catch (error) {
     console.error("Error in UpdateEpisode:", error);
-    return errorResponse(res, error.message || "Internal Server Error", 500);
+    return episodeSaveError(res, error);
   }
 });
 
