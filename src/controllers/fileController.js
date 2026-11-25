@@ -123,10 +123,9 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
-    const whereClause = {
-      isDeleted: false,
-      publicationStatus: "PUBLISHED",
-      ...(search && search.trim() !== "" && {
+    const filters = [];
+    if (search && search.trim() !== "") {
+      filters.push({
         OR: [
           {
             title: {
@@ -143,14 +142,24 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
             },
           },
         ],
-      }),
+      });
+    }
+    if (topic && topic.trim() !== "") {
+      filters.push({
+        OR: [
+          { categories: { has: topic.trim() } },
+          {
+            categories: { isEmpty: true },
+            topic: { equals: topic.trim(), mode: "insensitive" },
+          },
+        ],
+      });
+    }
 
-      ...(topic && topic.trim() !== "" && {
-        topic: {
-          equals: topic,
-          mode: "insensitive",
-        },
-      }),
+    const whereClause = {
+      isDeleted: false,
+      publicationStatus: "PUBLISHED",
+      ...(filters.length ? { AND: filters } : {}),
     };
 
     const [episodes, totalCount, topics] = await Promise.all([
@@ -169,8 +178,7 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
       }),
 
       prisma.episode.findMany({
-        distinct: ["topic"],
-        select: { topic: true },
+        select: { topic: true, categories: true },
         where: {
           topic: { not: null },
           isDeleted: false,
@@ -179,7 +187,16 @@ exports.GetAllFiles = catchAsync(async (req, res) => {
       }),
     ]);
 
-    const distinctTopics = topics.map(t => t.topic);
+    const distinctTopics = [...new Map(
+      topics
+        .flatMap(({ topic: legacyTopic, categories = [] }) => [
+          ...categories,
+          ...(legacyTopic ? legacyTopic.split(",") : []),
+        ])
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+        .map((value) => [value.toLocaleLowerCase(), value])
+    ).values()];
 
     return successResponse(res, "Episode retrieved successfully", 200, {
       episodes: episodes || [],

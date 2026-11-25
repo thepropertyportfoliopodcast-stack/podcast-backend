@@ -40,6 +40,16 @@ const parseStringArray = (value) => {
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 };
 
+const normalizeCategories = (value) => {
+  const entries = Array.isArray(value) ? value : String(value ?? "").split(",");
+  const unique = new Map();
+  entries.forEach((entry) => {
+    const category = String(entry).trim();
+    if (category && !unique.has(category.toLocaleLowerCase())) unique.set(category.toLocaleLowerCase(), category);
+  });
+  return [...unique.values()];
+};
+
 const requestFile = (req, fieldname) => Array.isArray(req.files)
   ? req.files.find((file) => file.fieldname === fieldname)
   : req.files?.[fieldname]?.[0];
@@ -128,6 +138,10 @@ async function prepareEpisodeHeroPhones(req, episode, enabled, previousEpisode =
 exports.AddPodcast = catchAsync(async (req, res) => {
   try {
     const { name, author, cast, description, email, language, seoTitle, seoDescription, primaryKeyword, secondaryKeywords } = req.body;
+
+    if ((description || "").length > 200 || (seoDescription || "").length > 200) {
+      return errorResponse(res, "Description and meta description must be 200 characters or fewer", 400);
+    }
 
     if (!name || !description) {
       return errorResponse(res, "Name and description are required", 401);
@@ -248,6 +262,9 @@ exports.UpdatePodcast = catchAsync(async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, author, cast, email, language, seoTitle, seoDescription, primaryKeyword, secondaryKeywords } = req.body;
+    if ((description || "").length > 200 || (seoDescription || "").length > 200) {
+      return errorResponse(res, "Description and meta description must be 200 characters or fewer", 400);
+    }
     // console.log("language", language);
     const dataToUpdate = {};
 
@@ -372,6 +389,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
   try {
     const {
       title,
+      slug,
       description,
       topic,
       podcastId,
@@ -407,6 +425,11 @@ exports.AddEpisode = catchAsync(async (req, res) => {
     const targetPublicationStatus = normalizePublicationStatus(publicationStatus);
     const isDraft = targetPublicationStatus === EPISODE_PUBLICATION.DRAFT;
     const thumbnailFile = requestFile(req, "thumbnail");
+    const categories = normalizeCategories(topic);
+
+    if ((description || "").length > 200 || (seoDescription || "").length > 200) {
+      return errorResponse(res, "Description and meta description must be 200 characters or fewer", 400);
+    }
 
     if (!hasMeaningfulContent(title) || !podcastId) {
       return errorResponse(
@@ -416,7 +439,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       );
     }
 
-    if (!isDraft && (!hasMeaningfulContent(description) || !hasMeaningfulContent(detail) || (!hasMeaningfulContent(link) && !hasMeaningfulContent(youtubeUrl)) || !hasMeaningfulContent(topic) || !hasMeaningfulContent(audio) || !thumbnailFile)) {
+    if (!isDraft && (!hasMeaningfulContent(description) || !hasMeaningfulContent(detail) || (!hasMeaningfulContent(link) && !hasMeaningfulContent(youtubeUrl)) || !categories.length || !hasMeaningfulContent(audio) || !thumbnailFile)) {
       return errorResponse(
         res,
         "Publishing requires a title, description, details, category, RSS artwork, audio and a YouTube or video link",
@@ -458,7 +481,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
 
     const episodeData = {
       uuid: uuidv4(),
-      slug: await createUniqueSlug(prisma, "episode", title),
+      slug: await createUniqueSlug(prisma, "episode", slug?.trim() || title, { preserveEpisodeNumber: Boolean(slug?.trim()) }),
       title: title.trim(),
       description: hasMeaningfulContent(description) ? description : "",
       publicationStatus: targetPublicationStatus,
@@ -466,7 +489,8 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       seoDescription: seoDescription?.trim() || null,
       primaryKeyword: primaryKeyword?.trim() || null,
       secondaryKeywords: secondaryKeywords?.trim() || null,
-      topic,
+      topic: categories.join(", ") || "Uncategorised",
+      categories,
       duration: duration ? Math.round(Number(duration)) : 0,
       durationInSec: durationInSec ? Math.round(Number(durationInSec)) : 0,
       episodeNumber: episodeNumber ? Math.round(Number(episodeNumber)) : null,
@@ -578,6 +602,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     const { id } = req.params;
     const {
       title,
+      slug,
       description,
       topic,
       detail,
@@ -617,6 +642,10 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       val.trim().toLowerCase() !== "null" &&
       val.trim().toLowerCase() !== "undefined";
 
+    if ((description || "").length > 200 || (seoDescription || "").length > 200) {
+      return errorResponse(res, "Description and meta description must be 200 characters or fewer", 400);
+    }
+
     const existingEpisode = await prisma.episode.findUnique({
       where: { uuid: id },
       include: { heroPhones: true },
@@ -639,13 +668,15 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       const effectiveTitle = title === undefined ? existingEpisode.title : title;
       const effectiveDescription = description === undefined ? existingEpisode.description : description;
       const effectiveDetail = detail === undefined ? existingEpisode.detail : detail;
-      const effectiveTopic = topic === undefined ? existingEpisode.topic : topic;
+      const effectiveCategories = topic === undefined
+        ? normalizeCategories(existingEpisode.categories?.length ? existingEpisode.categories : existingEpisode.topic)
+        : normalizeCategories(topic);
       const effectiveYoutubeUrl = youtubeUrl === undefined ? existingEpisode.youtubeUrl : youtubeUrl;
       const effectiveLink = isValidString(link) ? link : existingEpisode.link;
       const effectiveAudio = isValidString(audio) ? audio : existingEpisode.audio;
       const hasArtwork = Boolean(thumbnailFile || existingEpisode.thumbnail);
 
-      if (!hasMeaningfulContent(effectiveTitle) || !hasMeaningfulContent(effectiveDescription) || !hasMeaningfulContent(effectiveDetail) || !hasMeaningfulContent(effectiveTopic) || (!hasMeaningfulContent(effectiveLink) && !hasMeaningfulContent(effectiveYoutubeUrl)) || !hasMeaningfulContent(effectiveAudio) || !hasArtwork) {
+      if (!hasMeaningfulContent(effectiveTitle) || !hasMeaningfulContent(effectiveDescription) || !hasMeaningfulContent(effectiveDetail) || !effectiveCategories.length || (!hasMeaningfulContent(effectiveLink) && !hasMeaningfulContent(effectiveYoutubeUrl)) || !hasMeaningfulContent(effectiveAudio) || !hasArtwork) {
         return errorResponse(
           res,
           "Complete the title, description, details, category, RSS artwork, audio and a YouTube or video link before publishing",
@@ -661,7 +692,11 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
 
     if (title?.trim()) updates.title = title.trim();
     if (description !== undefined) updates.description = hasMeaningfulContent(description) ? description : "";
-    if (topic !== undefined) updates.topic = topic?.trim() || "Uncategorised";
+    if (topic !== undefined) {
+      const categories = normalizeCategories(topic);
+      updates.categories = categories;
+      updates.topic = categories.join(", ") || "Uncategorised";
+    }
     if (publicationStatus !== undefined) updates.publicationStatus = targetPublicationStatus;
     if (seoTitle !== undefined) updates.seoTitle = seoTitle.trim() || null;
     if (seoDescription !== undefined) updates.seoDescription = seoDescription.trim() || null;
@@ -689,8 +724,11 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     if (episodeNumber !== undefined) updates.episodeNumber = episodeNumber === "" ? null : Math.round(Number(episodeNumber));
     if (publishedDate) updates.createdAt = new Date(`${publishedDate}T00:00:00.000Z`);
     else if (isPublishingDraft) updates.createdAt = new Date();
-    if (isPublishingDraft) {
-      updates.slug = await createUniqueSlug(prisma, "episode", title || existingEpisode.title, { excludeId: existingEpisode.id });
+    if (slug !== undefined || isPublishingDraft) {
+      updates.slug = await createUniqueSlug(prisma, "episode", slug?.trim() || title || existingEpisode.title, {
+        excludeId: existingEpisode.id,
+        preserveEpisodeNumber: Boolean(slug?.trim()),
+      });
     }
     if (mimefield !== undefined) updates.mimefield = mimefield;
     if (size !== undefined && size !== null && size !== "") updates.size = BigInt(Math.round(Number(size)));

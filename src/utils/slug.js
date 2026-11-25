@@ -21,8 +21,8 @@ function removeEpisodeNumberFromSlug(value = "") {
   return value.toString().replace(/^ep(?:isode)?-\d+-/i, "");
 }
 
-async function createUniqueSlug(prisma, model, value, { excludeId } = {}) {
-  const base = slugify(model === "episode" ? removeEpisodeNumber(value) : value);
+async function createUniqueSlug(prisma, model, value, { excludeId, preserveEpisodeNumber = false } = {}) {
+  const base = slugify(model === "episode" && !preserveEpisodeNumber ? removeEpisodeNumber(value) : value);
   let candidate = base;
   let suffix = 2;
 

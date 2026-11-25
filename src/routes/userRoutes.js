@@ -6,6 +6,6 @@ const router = require("express").Router();
 
 router.post("/user/login", login);
 router.get("/user/profile", verifyToken, GetUser);
-router.get("/user/dashboard", verifyToken, requirePermission(ADMIN_PERMISSIONS.DASHBOARD), Dashboard);
+router.get("/user/dashboard", verifyToken, requirePermission(ADMIN_PERMISSIONS.PODCASTS), Dashboard);
 
 module.exports = router;

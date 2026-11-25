@@ -97,6 +97,7 @@ model Episode {
   episodeNumber          Int?
   season                 Int?
   topic                  String?              @default("Financing")
+  categories             String[]             @default([])
   audio                  String?
   audioSize              BigInt?
   audioStatus            String               @default("PENDING")
