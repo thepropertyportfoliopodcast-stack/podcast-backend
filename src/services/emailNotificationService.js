@@ -1,30 +1,8 @@
-const nodemailer = require("nodemailer");
 const prisma = require("../config/database");
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>\"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
 }[character]));
-
-let cachedTransporter;
-function getTransporter() {
-  const host = process.env.SMTP_HOST?.trim();
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS;
-  const port = Number(process.env.SMTP_PORT || 587);
-  if (!host || !user || !pass || !Number.isInteger(port)) return null;
-  if (!cachedTransporter) {
-    cachedTransporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || port === 465,
-      auth: { user, pass },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
-    });
-  }
-  return cachedTransporter;
-}
 
 async function getCcRecipients() {
   const setting = await prisma.emailNotificationSetting.findUnique({ where: { id: 1 } });
@@ -37,26 +15,39 @@ async function getCcRecipients() {
 }
 
 async function sendAdminNotification({ subject, text, html, replyTo }) {
-  const transporter = getTransporter();
-  const fromAddress = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
-  const toAddress = process.env.SMTP_TO?.trim() || process.env.SMTP_USER?.trim();
-  if (!transporter || !fromAddress || !toAddress) {
-    console.warn("Email notification skipped: SMTP_HOST, SMTP_USER, SMTP_PASS and a valid sender are required.");
-    return { sent: false, reason: "SMTP is not configured" };
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const from = process.env.RESEND_FROM?.trim();
+  const to = process.env.RESEND_TO?.trim() || process.env.SMTP_TO?.trim() || process.env.SMTP_USER?.trim();
+  if (!apiKey || !from || !to) {
+    console.warn("Email notification skipped: RESEND_API_KEY, RESEND_FROM and RESEND_TO are required.");
+    return { sent: false, reason: "Resend is not configured" };
   }
 
-  const cc = [...new Set(await getCcRecipients())].filter((email) => email !== toAddress.toLowerCase());
-  const result = await transporter.sendMail({
-    from: { name: process.env.SMTP_FROM_NAME?.trim() || "The Property Portfolio Podcast", address: fromAddress },
-    to: toAddress,
-    ...(cc.length ? { cc } : {}),
-    ...(replyTo ? { replyTo } : {}),
-    subject,
-    text,
-    html,
+  const cc = [...new Set(await getCcRecipients())].filter((email) => email !== to.toLowerCase());
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({
+      from,
+      to: [to],
+      ...(cc.length ? { cc } : {}),
+      ...(replyTo ? { reply_to: replyTo } : {}),
+      subject,
+      text,
+      html,
+    }),
   });
-  console.info("Admin email notification sent", { messageId: result.messageId, recipientCount: 1 + cc.length });
-  return { sent: true };
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = result.message || result.error || `Resend request failed (${response.status})`;
+    throw new Error(message);
+  }
+  console.info("Admin email notification sent", { messageId: result.id, recipientCount: 1 + cc.length });
+  return { sent: true, messageId: result.id };
 }
 
 exports.notifyNewEnquiry = async (enquiry) => {

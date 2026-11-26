@@ -12,12 +12,12 @@ exports.Addcontact = catchAsync(async (req, res) => {
   if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
     return validationErrorResponse(res, "Please enter a valid email address.", "Please enter a valid email address.", 400);
   }
-  const messageWordCount = message.trim().split(/\s+/).filter(Boolean).length;
-  if (messageWordCount < 30) {
+  const messageCharacterCount = message.trim().length;
+  if (messageCharacterCount < 80) {
     return validationErrorResponse(
       res,
-      `Your message must contain at least 30 words. Please add ${30 - messageWordCount} more.`,
-      `Your message must contain at least 30 words. Please add ${30 - messageWordCount} more.`,
+      `Your message must contain at least 80 characters. Please add ${80 - messageCharacterCount} more.`,
+      `Your message must contain at least 80 characters. Please add ${80 - messageCharacterCount} more.`,
       400
     );
   }
