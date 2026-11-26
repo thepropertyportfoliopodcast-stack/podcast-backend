@@ -4,6 +4,19 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>\"']/g, (characte
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
 }[character]));
 
+function enquirySource(enquiry) {
+  if (enquiry.source === "episode_page") {
+    const episodeTitle = String(enquiry.message || "").match(/(?:^|\n)Suggested from episode:\s*(.+)$/im)?.[1]?.trim();
+    return episodeTitle ? `Episode: ${episodeTitle}` : "Episode page";
+  }
+  if (enquiry.source === "contact_page") return "Contact page";
+  return String(enquiry.source || "Website").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function enquiryMessage(enquiry) {
+  return String(enquiry.message || "").replace(/\s*Suggested from episode:\s*.+$/is, "").trim();
+}
+
 async function getCcRecipients() {
   const setting = await prisma.emailNotificationSetting.findUnique({ where: { id: 1 } });
   if (!setting?.adminIds?.length) return [];
@@ -52,23 +65,26 @@ async function sendAdminNotification({ subject, text, html, replyTo }) {
 
 exports.notifyNewEnquiry = async (enquiry) => {
   const subject = `New website ${enquiry.kind === "TOPIC_SUGGESTION" ? "topic suggestion" : "enquiry"}: ${enquiry.subject || "No subject"}`;
+  const source = enquirySource(enquiry);
+  const message = enquiryMessage(enquiry);
   const text = [
     "A new enquiry was submitted on The Property Portfolio Podcast website.",
     `Name: ${enquiry.name}`,
     `Email: ${enquiry.email}`,
     `Subject: ${enquiry.subject || ""}`,
     `Type: ${enquiry.kind}`,
-    `Source: ${enquiry.source || ""}`,
+    `Source: ${source}`,
     "",
-    enquiry.message,
+    message,
   ].join("\n");
-  const html = `<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.6"><h2>New website enquiry</h2><p><b>Name:</b> ${escapeHtml(enquiry.name)}</p><p><b>Email:</b> ${escapeHtml(enquiry.email)}</p><p><b>Subject:</b> ${escapeHtml(enquiry.subject || "")}</p><p><b>Type:</b> ${escapeHtml(enquiry.kind)}</p><p><b>Source:</b> ${escapeHtml(enquiry.source || "")}</p><hr/><p style="white-space:pre-wrap">${escapeHtml(enquiry.message)}</p></div>`;
+  const fieldRow = (label, value) => `<tr><td style="padding:9px 12px 9px 0;color:#6b6174;font-size:13px;font-weight:700;vertical-align:top;white-space:nowrap">${label}</td><td style="padding:9px 0;color:#24182c;font-size:14px;font-weight:600;line-height:1.5;word-break:break-word">${value}</td></tr>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:0;background-color:#f7f3fb;color:#24182c;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f7f3fb;padding:28px 12px"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #e9def3;border-radius:18px;overflow:hidden;box-shadow:0 8px 28px rgba(52,20,76,.10)"><tr><td style="padding:28px 32px;background-color:#7d26c9;background-image:linear-gradient(115deg,#7d26c9 0%,#a52de0 52%,#e521c8 100%);color:#ffffff"><div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#f5dfff">The Property Portfolio Podcast</div><h1 style="margin:12px 0 0;font-size:25px;line-height:1.25;color:#ffffff">New ${enquiry.kind === "TOPIC_SUGGESTION" ? "topic suggestion" : "website enquiry"}</h1><p style="margin:8px 0 0;font-size:14px;line-height:1.6;color:#fff4ff">A new message has arrived from your website.</p></td></tr><tr><td style="padding:26px 32px 12px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${fieldRow("NAME", escapeHtml(enquiry.name))}${fieldRow("EMAIL", `<a href="mailto:${escapeHtml(enquiry.email)}" style="color:#7626bd;text-decoration:underline">${escapeHtml(enquiry.email)}</a>`)}${fieldRow("SUBJECT", escapeHtml(enquiry.subject || "—"))}${fieldRow("TYPE", escapeHtml(String(enquiry.kind || "Enquiry").replace(/_/g, " ")))}${fieldRow("SOURCE", `<span style="display:inline-block;padding:5px 10px;border-radius:999px;background-color:#f3e6ff;color:#7022ad;font-size:13px;font-weight:700">${escapeHtml(source)}</span>`)}</table></td></tr><tr><td style="padding:10px 32px 30px"><div style="border-top:1px solid #eee7f3;padding-top:20px"><div style="margin-bottom:10px;color:#6b6174;font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase">Message</div><div style="padding:18px 20px;border:1px solid #eadcf4;border-left:4px solid #a52de0;border-radius:12px;background-color:#fbf9fd;color:#30243b;font-size:15px;line-height:1.7;white-space:pre-wrap;word-break:break-word">${escapeHtml(message)}</div></div><p style="margin:22px 0 0;color:#82788a;font-size:12px;line-height:1.6">Reply to this email to respond directly to ${escapeHtml(enquiry.name)}.</p></td></tr><tr><td style="padding:15px 32px;background-color:#f7f3fb;border-top:1px solid #eee7f3;color:#81788a;font-size:11px;line-height:1.5">Automated notification from thepropertyportfolio.com.au</td></tr></table></td></tr></table></body></html>`;
   return sendAdminNotification({ subject, text, html, replyTo: enquiry.email });
 };
 
 exports.notifyNewSubscriber = async (subscriber) => {
   const subject = "New website newsletter subscriber";
   const text = `A new subscriber signed up on The Property Portfolio Podcast website.\n\nEmail: ${subscriber.email}`;
-  const html = `<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.6"><h2>New newsletter subscriber</h2><p><b>Email:</b> ${escapeHtml(subscriber.email)}</p></div>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:0;background-color:#f7f3fb;color:#24182c;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f7f3fb;padding:28px 12px"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #e9def3;border-radius:18px;overflow:hidden"><tr><td style="padding:28px 32px;background-color:#7d26c9;background-image:linear-gradient(115deg,#7d26c9 0%,#a52de0 52%,#e521c8 100%);color:#ffffff"><div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#f5dfff">The Property Portfolio Podcast</div><h1 style="margin:12px 0 0;font-size:25px;line-height:1.25;color:#ffffff">New newsletter subscriber</h1><p style="margin:8px 0 0;font-size:14px;line-height:1.6;color:#fff4ff">Someone joined your website mailing list.</p></td></tr><tr><td style="padding:26px 32px 30px"><div style="margin-bottom:8px;color:#6b6174;font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase">Email address</div><div style="padding:16px 18px;border:1px solid #eadcf4;border-left:4px solid #a52de0;border-radius:12px;background-color:#fbf9fd;color:#30243b;font-size:15px;line-height:1.6;word-break:break-word"><a href="mailto:${escapeHtml(subscriber.email)}" style="color:#7626bd;text-decoration:underline">${escapeHtml(subscriber.email)}</a></div></td></tr><tr><td style="padding:15px 32px;background-color:#f7f3fb;border-top:1px solid #eee7f3;color:#81788a;font-size:11px;line-height:1.5">Automated notification from thepropertyportfolio.com.au</td></tr></table></td></tr></table></body></html>`;
   return sendAdminNotification({ subject, text, html, replyTo: subscriber.email });
 };

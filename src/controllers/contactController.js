@@ -12,19 +12,24 @@ exports.Addcontact = catchAsync(async (req, res) => {
   if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
     return validationErrorResponse(res, "Please enter a valid email address.", "Please enter a valid email address.", 400);
   }
-  const messageCharacterCount = message.trim().length;
-  if (messageCharacterCount < 80) {
+  const resolvedSource = source || (/topic|suggest/i.test(subject) ? "episode_page" : "contact_page");
+  const cleanMessage = message.trim();
+  const messageForLength = resolvedSource === "episode_page"
+    ? cleanMessage.replace(/\s*Suggested from episode:\s*.+$/is, "").trim()
+    : cleanMessage;
+  const messageCharacterCount = messageForLength.length;
+  if (messageCharacterCount < 30) {
     return validationErrorResponse(
       res,
-      `Your message must contain at least 80 characters. Please add ${80 - messageCharacterCount} more.`,
-      `Your message must contain at least 80 characters. Please add ${80 - messageCharacterCount} more.`,
+      `Your message must contain at least 30 characters. Please add ${30 - messageCharacterCount} more.`,
+      `Your message must contain at least 30 characters. Please add ${30 - messageCharacterCount} more.`,
       400
     );
   }
 
   const kind = /topic|suggest/i.test(subject) ? "TOPIC_SUGGESTION" : "ENQUIRY";
   let record = await prisma.contact.create({
-    data: { email: email.trim().toLowerCase(), name: name.trim(), subject, message: message.trim(), kind, source: source || (kind === "TOPIC_SUGGESTION" ? "episode_page" : "contact_page") },
+    data: { email: email.trim().toLowerCase(), name: name.trim(), subject, message: cleanMessage, kind, source: resolvedSource },
   });
 
   try {
