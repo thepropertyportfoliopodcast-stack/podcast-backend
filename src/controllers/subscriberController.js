@@ -1,22 +1,29 @@
 const catchAsync = require("../middleware/asyncHandler");
 const { successResponse, errorResponse, validationErrorResponse } = require("../utils/httpResponses");
 const prisma = require("../config/database");
+const { notifyNewSubscriber } = require("../services/emailNotificationService");
 
 exports.AddSubscriber = catchAsync(async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) {
-            return validationErrorResponse(res, "Email is required", 401);
+        const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+        if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+            return validationErrorResponse(res, "A valid email address is required", 400);
         }
         const existing = await prisma.subscriber.findUnique({
-            where: { email },
+            where: { email: normalizedEmail },
         });
         if (existing) {
             return validationErrorResponse(res, "You are already subscribed!", 409);
         }
         const record = await prisma.subscriber.create({
-            data: { email },
+            data: { email: normalizedEmail },
         });
+        try {
+            await notifyNewSubscriber(record);
+        } catch (emailError) {
+            console.error("Unable to send new subscriber notification:", emailError.message);
+        }
         return successResponse(res, "Subscriber added successfully!", 201, record);
     } catch (error) {
         return errorResponse(res, error.message || "Internal Server Error", 500);

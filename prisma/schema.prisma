@@ -191,6 +191,12 @@ model contact {
   @@index([kind, createdAt])
 }
 
+model EmailNotificationSetting {
+  id        Int      @id @default(1)
+  adminIds  Int[]    @default([])
+  updatedAt DateTime @updatedAt
+}
+
 model DistributionStatus {
   id                 Int       @id @default(autoincrement())
   episodeId          Int

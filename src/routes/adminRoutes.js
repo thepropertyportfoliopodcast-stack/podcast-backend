@@ -7,6 +7,7 @@ const { listHosts, getHost, createHost, updateHost } = require("../controllers/h
 const { listAdminHeroPhones, createHeroPhone, updateHeroPhone, deleteHeroPhone } = require("../controllers/heroPhoneController");
 const { getDashboardAnalytics, deleteAnalyticsError, clearAnalyticsErrors, getLighthouseTargets, getLighthouseAudit, getWebsiteHealth, listAnalyticsIpExclusions, createAnalyticsIpExclusion, updateAnalyticsIpExclusion, deleteAnalyticsIpExclusion } = require("../controllers/analyticsController");
 const { listAdmins, createAdmin, updateAdmin, deleteAdmin, updateMyAvatar } = require("../controllers/adminUserController");
+const { getEmailNotificationSettings, updateEmailNotificationSettings } = require("../controllers/emailNotificationController");
 const { listEpisodeTranscripts, regenerateEpisodeTranscript, cancelEpisodeTranscript, deleteEpisodeTranscript, retryFailedEpisodeTranscripts, backfillEpisodeTranscripts, getEpisodeTranscriptionSummary } = require("../controllers/transcriptionController");
 
 const access = (permission) => [verifyToken, requirePermission(permission)];
@@ -16,6 +17,8 @@ router.post("/admin/users", verifyToken, requireSuperAdmin, createAdmin);
 router.patch("/admin/users/:id", verifyToken, requireSuperAdmin, updateAdmin);
 router.delete("/admin/users/:id", verifyToken, requireSuperAdmin, deleteAdmin);
 router.patch("/admin/profile/avatar", verifyToken, updateMyAvatar);
+router.get("/admin/email-notifications/recipients", ...access(ADMIN_PERMISSIONS.ENQUIRIES), getEmailNotificationSettings);
+router.put("/admin/email-notifications/recipients", ...access(ADMIN_PERMISSIONS.ENQUIRIES), updateEmailNotificationSettings);
 
 router.get("/admin/analytics", ...access(ADMIN_PERMISSIONS.ANALYTICS), getDashboardAnalytics);
 router.delete("/admin/analytics/errors", ...access(ADMIN_PERMISSIONS.ANALYTICS), clearAnalyticsErrors);

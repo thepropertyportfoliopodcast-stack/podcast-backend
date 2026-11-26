@@ -2,6 +2,7 @@ const catchAsync = require("../middleware/asyncHandler");
 const { successResponse, errorResponse, validationErrorResponse } = require("../utils/httpResponses");
 const prisma = require("../config/database");
 const { appendContactToSheet } = require("../services/googleIntegrationService");
+const { notifyNewEnquiry } = require("../services/emailNotificationService");
 
 exports.Addcontact = catchAsync(async (req, res) => {
   const { name, email, subject, message, source } = req.body;
@@ -33,6 +34,12 @@ exports.Addcontact = catchAsync(async (req, res) => {
     }
   } catch (sheetError) {
     record = await prisma.contact.update({ where: { id: record.id }, data: { sheetSyncError: sheetError.message.slice(0, 1000) } });
+  }
+
+  try {
+    await notifyNewEnquiry(record);
+  } catch (emailError) {
+    console.error("Unable to send new enquiry notification:", emailError.message);
   }
 
   return successResponse(res, "Contact Added successfully!", 201, record);

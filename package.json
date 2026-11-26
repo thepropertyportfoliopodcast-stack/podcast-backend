@@ -32,6 +32,7 @@
     "lighthouse": "^13.4.1",
     "multer": "^2.0.1",
     "music-metadata": "^7.14.0",
+    "nodemailer": "^10.6.1",
     "puppeteer": "^24.43.1",
     "uuid": "^11.1.0",
     "winston": "^3.17.0",
