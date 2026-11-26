@@ -15,7 +15,7 @@ const access = (permission) => [verifyToken, requirePermission(permission)];
 router.get("/admin/users", verifyToken, requireSuperAdmin, listAdmins);
 router.post("/admin/users", verifyToken, requireSuperAdmin, createAdmin);
 router.patch("/admin/users/:id", verifyToken, requireSuperAdmin, updateAdmin);
-router.delete("/admin/users/:id", verifyToken, requireSuperAdmin, deleteAdmin);
+router.delete("/admin/users/:id", verifyToken, deleteAdmin);
 router.patch("/admin/profile/avatar", verifyToken, updateMyAvatar);
 router.get("/admin/email-notifications/recipients", ...access(ADMIN_PERMISSIONS.ENQUIRIES), getEmailNotificationSettings);
 router.put("/admin/email-notifications/recipients", ...access(ADMIN_PERMISSIONS.ENQUIRIES), updateEmailNotificationSettings);

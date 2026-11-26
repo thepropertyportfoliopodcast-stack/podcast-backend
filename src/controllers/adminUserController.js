@@ -5,6 +5,7 @@ const { errorResponse, successResponse } = require("../utils/httpResponses");
 const { normalizePermissions } = require("../config/adminPermissions");
 
 const publicUser = { id: true, name: true, email: true, role: true, permissions: true, avatar: true, isActive: true, createdAt: true, updatedAt: true };
+const protectedOwnerEmail = "utsav@proowrx.com";
 const avatarOptions = new Set([
   "001-monk.svg", "002-crossbow.svg", "003-bow.svg", "004-priest.svg", "005-martial.svg",
   "006-barbarian.svg", "007-gunnery.svg", "008-samurai.svg", "009-alchemy.svg", "010-druid.svg",
@@ -37,6 +38,10 @@ exports.updateAdmin = catchAsync(async (req, res) => {
   if (!existing) return errorResponse(res, "Administrator not found", 404);
   const role = req.body.role === undefined ? existing.role : validRole(req.body.role);
   const isActive = req.body.isActive === undefined ? existing.isActive : Boolean(req.body.isActive);
+  const targetIsOwner = existing.email.trim().toLowerCase() === protectedOwnerEmail;
+  const actorIsOwner = req.user?.email?.trim().toLowerCase() === protectedOwnerEmail;
+  if (targetIsOwner && !actorIsOwner) return errorResponse(res, "Only the protected owner can edit this administrator profile", 403);
+  if (targetIsOwner && (role !== "SUPER_ADMIN" || !isActive)) return errorResponse(res, "The protected owner account must remain active as a super admin", 400);
   if (id === req.user.id && (role !== "SUPER_ADMIN" || !isActive)) return errorResponse(res, "You cannot remove your own super-admin access or deactivate your own account", 400);
   const data = {
     ...(req.body.name !== undefined ? { name: req.body.name.trim() } : {}),
@@ -56,12 +61,26 @@ exports.deleteAdmin = catchAsync(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return errorResponse(res, "Invalid administrator ID", 400);
 
-  const existing = await prisma.user.findUnique({ where: { id }, select: { role: true } });
-  if (!existing) return errorResponse(res, "Administrator not found", 404);
-  if (existing.role === "SUPER_ADMIN") return errorResponse(res, "Super-admin accounts cannot be deleted", 403);
+  const actorEmail = req.user?.email?.trim().toLowerCase();
+  const actorIsOwner = actorEmail === protectedOwnerEmail;
+  if (req.user?.role !== "SUPER_ADMIN" && !actorIsOwner) return errorResponse(res, "Super-admin access is required", 403);
 
-  const result = await prisma.user.deleteMany({ where: { id, role: "ADMIN" } });
-  if (!result.count) return errorResponse(res, "This administrator can no longer be deleted", 409);
+  const existing = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true, role: true } });
+  if (!existing) return errorResponse(res, "Administrator not found", 404);
+  if (existing.id === req.user.id) return errorResponse(res, "You cannot delete your own administrator account", 400);
+  if (existing.email.trim().toLowerCase() === protectedOwnerEmail) return errorResponse(res, "The protected owner account cannot be deleted", 403);
+  if (existing.role === "SUPER_ADMIN" && !actorIsOwner) return errorResponse(res, "Only utsav@proowrx.com can delete a super-admin account", 403);
+
+  await prisma.$transaction(async (tx) => {
+    const setting = await tx.emailNotificationSetting.findUnique({ where: { id: 1 } });
+    if (setting?.adminIds.includes(id)) {
+      await tx.emailNotificationSetting.update({
+        where: { id: 1 },
+        data: { adminIds: setting.adminIds.filter((adminId) => adminId !== id) },
+      });
+    }
+    await tx.user.delete({ where: { id } });
+  });
 
   return successResponse(res, "Administrator deleted");
 });

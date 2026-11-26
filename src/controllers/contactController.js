@@ -18,11 +18,11 @@ exports.Addcontact = catchAsync(async (req, res) => {
     ? cleanMessage.replace(/\s*Suggested from episode:\s*.+$/is, "").trim()
     : cleanMessage;
   const messageCharacterCount = messageForLength.length;
-  if (messageCharacterCount < 30) {
+  if (messageCharacterCount < 20) {
     return validationErrorResponse(
       res,
-      `Your message must contain at least 30 characters. Please add ${30 - messageCharacterCount} more.`,
-      `Your message must contain at least 30 characters. Please add ${30 - messageCharacterCount} more.`,
+      `Your message must contain at least 20 characters. Please add ${20 - messageCharacterCount} more.`,
+      `Your message must contain at least 20 characters. Please add ${20 - messageCharacterCount} more.`,
       400
     );
   }
