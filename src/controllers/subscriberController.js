@@ -64,3 +64,13 @@ exports.SubscriberGet = catchAsync(async (req, res) => {
     return errorResponse(res, error.message || "Internal Server Error", 500);
   }
 });
+
+exports.DeleteSubscriber = catchAsync(async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id < 1) {
+        return validationErrorResponse(res, "A valid subscriber ID is required", 400);
+    }
+    const result = await prisma.subscriber.deleteMany({ where: { id } });
+    if (!result.count) return errorResponse(res, "Subscriber not found", 404);
+    return successResponse(res, "Subscriber deleted successfully", 200, { id });
+});
