@@ -9,13 +9,22 @@ const { enqueueEpisodeTranscription, STATUS: TRANSCRIPT_STATUS } = require("../s
 
 const EPISODE_PUBLICATION = Object.freeze({
   DRAFT: "DRAFT",
+  SCHEDULED: "SCHEDULED",
   PUBLISHED: "PUBLISHED",
 });
 
-const normalizePublicationStatus = (value, fallback = EPISODE_PUBLICATION.PUBLISHED) =>
-  String(value || fallback).trim().toUpperCase() === EPISODE_PUBLICATION.DRAFT
-    ? EPISODE_PUBLICATION.DRAFT
-    : EPISODE_PUBLICATION.PUBLISHED;
+const normalizePublicationStatus = (value, fallback = EPISODE_PUBLICATION.PUBLISHED) => {
+  const status = String(value || fallback).trim().toUpperCase();
+  return Object.values(EPISODE_PUBLICATION).includes(status) ? status : EPISODE_PUBLICATION.PUBLISHED;
+};
+
+const parseScheduleDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw episodeError("Choose a valid scheduled publication date and time.");
+  if (date.getTime() <= Date.now()) throw episodeError("Scheduled publication must be in the future.");
+  return date;
+};
 
 const hasMeaningfulContent = (value) => {
   const normalized = String(value ?? "")
@@ -420,10 +429,16 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       ,relatedEpisodeUuids
       ,homePageHeroPhone
       ,publicationStatus
+      ,scheduledAt
     } = req.body;
 
     const targetPublicationStatus = normalizePublicationStatus(publicationStatus);
     const isDraft = targetPublicationStatus === EPISODE_PUBLICATION.DRAFT;
+    let parsedScheduledAt = null;
+    try {
+      if (targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED) parsedScheduledAt = parseScheduleDate(scheduledAt);
+    } catch (error) { return errorResponse(res, error.message, 400); }
+    if (targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED && !parsedScheduledAt) return errorResponse(res, "Choose a future date and time to schedule this episode.", 400);
     const thumbnailFile = requestFile(req, "thumbnail");
     const categories = normalizeCategories(topic);
 
@@ -485,6 +500,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       title: title.trim(),
       description: hasMeaningfulContent(description) ? description : "",
       publicationStatus: targetPublicationStatus,
+      scheduledAt: parsedScheduledAt,
       seoTitle: seoTitle?.trim() || null,
       seoDescription: seoDescription?.trim() || null,
       primaryKeyword: primaryKeyword?.trim() || null,
@@ -517,7 +533,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       youtubeUrl: youtubeUrl?.trim() || null,
       transcript: transcript || null,
       transcriptIsManual: Boolean(transcript?.trim()),
-      transcriptStatus: isDraft ? TRANSCRIPT_STATUS.PENDING : TRANSCRIPT_STATUS.QUEUED,
+      transcriptStatus: targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED ? TRANSCRIPT_STATUS.QUEUED : TRANSCRIPT_STATUS.PENDING,
       transcriptLanguage: "en",
       transcriptSyncOffsetMs: Number.isFinite(Number.parseInt(transcriptSyncOffsetMs, 10))
         ? Math.max(-300000, Math.min(300000, Number.parseInt(transcriptSyncOffsetMs, 10)))
@@ -538,7 +554,7 @@ exports.AddEpisode = catchAsync(async (req, res) => {
       const heroPhones = await phones.save(db, newEpisode.id);
       return { newEpisode, heroPhones };
     });
-    if (!isDraft) {
+    if (targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED) {
       await enqueueEpisodeTranscription(newEpisode.id).catch((error) => {
         console.error(`Unable to queue transcript for episode ${newEpisode.id}:`, error);
       });
@@ -633,6 +649,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       homePageHeroPhone,
       transcriptSyncOffsetMs,
       publicationStatus,
+      scheduledAt,
     } = req.body;
 
     // console.log("req.body", req.body);
@@ -658,13 +675,18 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
     const targetPublicationStatus = publicationStatus === undefined
       ? normalizePublicationStatus(existingEpisode.publicationStatus)
       : normalizePublicationStatus(publicationStatus);
+    let parsedScheduledAt = undefined;
+    try {
+      if (targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED) parsedScheduledAt = parseScheduleDate(scheduledAt || existingEpisode.scheduledAt);
+    } catch (error) { return errorResponse(res, error.message, 400); }
+    if (targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED && !parsedScheduledAt) return errorResponse(res, "Choose a future date and time to schedule this episode.", 400);
     const isPublishingDraft = normalizePublicationStatus(existingEpisode.publicationStatus) === EPISODE_PUBLICATION.DRAFT
       && targetPublicationStatus === EPISODE_PUBLICATION.PUBLISHED;
     const thumbnailFile = requestFile(req, "thumbnail");
     const homepageThumbnailFile = requestFile(req, "homepageThumbnail");
     const websiteThumbnailFile = requestFile(req, "websiteThumbnail");
 
-    if (isPublishingDraft) {
+    if (isPublishingDraft || targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED) {
       const effectiveTitle = title === undefined ? existingEpisode.title : title;
       const effectiveDescription = description === undefined ? existingEpisode.description : description;
       const effectiveDetail = detail === undefined ? existingEpisode.detail : detail;
@@ -698,6 +720,7 @@ exports.UpdateEpisode = catchAsync(async (req, res) => {
       updates.topic = categories.join(", ") || "Uncategorised";
     }
     if (publicationStatus !== undefined) updates.publicationStatus = targetPublicationStatus;
+    if (publicationStatus !== undefined || scheduledAt !== undefined) updates.scheduledAt = targetPublicationStatus === EPISODE_PUBLICATION.SCHEDULED ? parsedScheduledAt : null;
     if (seoTitle !== undefined) updates.seoTitle = seoTitle.trim() || null;
     if (seoDescription !== undefined) updates.seoDescription = seoDescription.trim() || null;
     if (primaryKeyword !== undefined) updates.primaryKeyword = primaryKeyword.trim() || null;

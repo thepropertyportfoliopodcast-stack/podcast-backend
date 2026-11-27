@@ -67,6 +67,7 @@ model Episode {
   podcastId              Int
   isDeleted              Boolean              @default(false)
   publicationStatus      String               @default("PUBLISHED")
+  scheduledAt            DateTime?
   detail                 String?
   spotifyLink            String?
   appleLink              String?

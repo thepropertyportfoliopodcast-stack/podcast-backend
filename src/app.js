@@ -61,3 +61,4 @@ server.timeout = 360000;
 
 const { startTranscriptionWorker } = require("./services/transcriptionService");
 startTranscriptionWorker().catch((error) => console.error("Unable to start WhisperX worker:", error));
+require("./services/episodeScheduler").startEpisodeScheduler();

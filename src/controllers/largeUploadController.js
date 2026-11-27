@@ -1,4 +1,4 @@
-const { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand } = require("@aws-sdk/client-s3");
+const { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { v4: uuid } = require("uuid");
 const crypto = require("crypto");
@@ -17,7 +17,10 @@ const s3 = new S3Client({
 exports.startLargeUpload = async (req, res) => {
   try {
     // console.log("Upload route hit");
-    const { fileName, mimeType } = req.body;
+    const { fileName, mimeType, mediaKind } = req.body;
+    if (!fileName || !["video", "audio"].includes(mediaKind) || !String(mimeType || "").toLowerCase().startsWith(`${mediaKind}/`)) {
+      return res.status(400).json({ message: "Choose a valid video file for the video field or an audio file for the audio field." });
+    }
 
     const key = `files/${uuid()}-${sanitizeMediaFileName(fileName)}`;
 
@@ -82,5 +85,19 @@ exports.completeLargeUpload = async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ message: "Merge failed", error: err.message });
+  }
+};
+
+exports.cancelLargeUpload = async (req, res) => {
+  try {
+    const { uploadId, key } = req.body;
+    if (!uploadId || !key || !String(key).startsWith("files/")) {
+      return res.status(400).json({ message: "A valid upload is required to cancel." });
+    }
+    await s3.send(new AbortMultipartUploadCommand({ Bucket: process.env.B2_BUCKET, Key: key, UploadId: uploadId }));
+    return res.status(200).json({ message: "Upload cancelled." });
+  } catch (err) {
+    console.error("Multipart upload cancellation failed:", err);
+    return res.status(500).json({ message: "Could not cancel the upload." });
   }
 };
